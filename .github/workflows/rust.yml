@@ -29,3 +29,8 @@ jobs:
       with:
         command: test
         args: --verbose
+    - name: Check if can be packaged
+      uses: actions-rs/cargo@v1
+      with:
+        command: package
+        args: -p netconfig
