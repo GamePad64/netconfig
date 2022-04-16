@@ -21,8 +21,7 @@ nix::ioctl_read_bad!(siocgifdstaddr, libc::SIOCGIFDSTADDR, ifreq);
 nix::ioctl_read_bad!(siocgifbrdaddr, libc::SIOCGIFBRDADDR, ifreq);
 nix::ioctl_read_bad!(siocgifnetmask, libc::SIOCGIFNETMASK, ifreq);
 
-const IFNAMSIZ: u32 = 16;
-pub(crate) type IfName = [libc::c_char; IFNAMSIZ as _]; // Null-terminated
+pub(crate) type IfName = [libc::c_char; libc::IFNAMSIZ as _]; // Null-terminated
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -77,10 +76,10 @@ bitflags! {
 
 impl ifreq {
     fn make_ifname(name: &str) -> IfName {
-        let mut ifname: IfName = [0; IFNAMSIZ as _];
+        let mut ifname: IfName = [0; libc::IFNAMSIZ as _];
         ifname
             .iter_mut()
-            .zip(name.as_bytes().iter().take((IFNAMSIZ - 1) as _))
+            .zip(name.as_bytes().iter().take((libc::IFNAMSIZ - 1) as _))
             .for_each(|(x, z)| {
                 *x = *z as _;
             });

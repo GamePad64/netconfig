@@ -1,8 +1,10 @@
 use windows::Win32::NetworkManagement::IpHelper::{FreeMibTable, GetIpInterfaceTable};
 use windows::Win32::Networking::WinSock::AF_UNSPEC;
 
-pub use handle::{InterfaceHandle, InterfaceHandleExt};
-pub use metadata::{Metadata, MetadataExt};
+pub(crate) use handle::InterfaceHandle;
+pub use handle::InterfaceHandleExt;
+pub(crate) use metadata::Metadata;
+pub use metadata::MetadataExt;
 
 mod handle;
 mod metadata;

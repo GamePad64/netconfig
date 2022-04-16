@@ -2,7 +2,7 @@ use crate::linux::handle::InterfaceHandleExt;
 use crate::MetadataCommonT;
 
 #[derive(Default)]
-pub struct Metadata {
+pub(crate) struct Metadata {
     pub(crate) name: String,
     pub(crate) mtu: u32,
 }

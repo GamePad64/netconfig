@@ -16,7 +16,7 @@ use windows::Win32::NetworkManagement::IpHelper::{
 use windows::Win32::NetworkManagement::Ndis::NDIS_IF_MAX_STRING_SIZE;
 use windows::Win32::Networking::WinSock::{AF_INET, AF_INET6, AF_UNSPEC};
 
-pub struct InterfaceHandle {
+pub(crate) struct InterfaceHandle {
     luid: NET_LUID_LH,
 }
 

@@ -19,7 +19,7 @@ use std::net::IpAddr;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
-pub struct InterfaceHandle {
+pub(crate) struct InterfaceHandle {
     name: String,
     socket: Arc<net::UdpSocket>,
 }

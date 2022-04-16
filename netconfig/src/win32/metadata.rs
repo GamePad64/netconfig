@@ -34,7 +34,7 @@ impl MetadataExt for crate::Metadata {
 }
 
 #[derive(Default)]
-pub struct Metadata {
+pub(crate) struct Metadata {
     pub(crate) luid: NET_LUID_LH,
     pub(crate) guid: GUID,
     pub(crate) index: u32,

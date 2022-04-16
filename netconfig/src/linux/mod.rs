@@ -1,13 +1,14 @@
 use std::fs;
 
-pub use handle::{InterfaceHandle, InterfaceHandleExt};
-pub use metadata::Metadata;
+pub(crate) use handle::InterfaceHandle;
+pub use handle::InterfaceHandleExt;
+pub(crate) use metadata::Metadata;
 
-pub mod handle;
+mod handle;
 mod ifreq;
-pub mod metadata;
+mod metadata;
 
-pub fn list_interfaces() -> Vec<crate::InterfaceHandle> {
+pub(crate) fn list_interfaces() -> Vec<crate::InterfaceHandle> {
     let mut result = vec![];
 
     for path in fs::read_dir("/sys/class/net").expect("Path is not available") {
