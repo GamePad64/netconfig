@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/GamePad64/netconfig"
+description = "Crate for managing network interfaces and IP addresses in a cross-platform way. Supports Windows and Linux (for now)"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
