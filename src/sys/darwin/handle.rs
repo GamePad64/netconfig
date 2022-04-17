@@ -48,6 +48,6 @@ impl InterfaceHandleCommonT for InterfaceHandle {
     }
 
     fn try_from_name(name: &str) -> Result<crate::InterfaceHandle, Error> {
-        nametoindex(name).map(|n| crate::InterfaceHandle::from_index_unchecked(n))
+        nametoindex(name).map(crate::InterfaceHandle::from_index_unchecked)
     }
 }

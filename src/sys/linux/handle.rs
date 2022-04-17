@@ -1,5 +1,6 @@
 use super::ifreq::{ifreq as InterfaceRequest, siocsifmtu};
 use super::Metadata;
+use crate::sys::posix::{ifaceaddr, indextoname, nametoindex};
 use crate::sys::InterfaceHandle;
 use crate::{Error, InterfaceHandleCommonT};
 use ipnet::IpNet;
@@ -15,27 +16,13 @@ use netlink_sys::constants::NETLINK_ROUTE;
 use netlink_sys::{Socket, SocketAddr};
 use nix::ifaddrs::getifaddrs;
 use nix::sys::socket::SockAddr::Inet;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::net;
 use std::net::IpAddr;
 use std::os::unix::io::AsRawFd;
 
 pub trait InterfaceHandleExt {
     fn try_from_name(name: &str) -> Result<crate::InterfaceHandle, Error>;
-}
-
-fn indextoname(index: u32) -> Result<String, Error> {
-    let mut buf = vec![0i8; libc::IF_NAMESIZE + 1];
-    let ret_buf = unsafe { libc::if_indextoname(index, buf.as_mut_ptr() as _) };
-
-    if ret_buf.is_null() {
-        return Err(Error::InterfaceNotFound);
-    }
-
-    match unsafe { CStr::from_ptr(buf.as_ptr()) }.to_str() {
-        Ok(s) => Ok(s.to_string()),
-        Err(_) => Err(Error::UnexpectedMetadata),
-    }
 }
 
 impl InterfaceHandle {
@@ -172,37 +159,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
     }
 
     fn get_addresses(&self) -> Result<Vec<IpNet>, Error> {
-        let mut result = vec![];
-        let interface_name = self.name()?;
-
-        for interface in getifaddrs()?.filter(|x| x.interface_name == interface_name) {
-            if interface.address.is_none() || interface.netmask.is_none() {
-                continue;
-            }
-
-            if let (Some(Inet(address)), Some(Inet(netmask))) =
-                (interface.address, interface.netmask)
-            {
-                let prefix_len: u8 = match netmask.ip().to_std() {
-                    IpAddr::V4(addr) => addr
-                        .octets()
-                        .iter()
-                        .map(|byte| byte.leading_ones() as u8)
-                        .sum(),
-                    IpAddr::V6(addr) => addr
-                        .octets()
-                        .iter()
-                        .map(|byte| byte.leading_ones() as u8)
-                        .sum(),
-                };
-
-                result.push(
-                    IpNet::new(address.ip().to_std(), prefix_len)
-                        .expect("IP address and netmask converted"),
-                );
-            }
-        }
-        Ok(result)
+        ifaceaddr(&*self.name()?)
     }
 
     fn set_mtu(&self, mtu: u32) -> Result<(), Error> {
@@ -216,16 +173,11 @@ impl InterfaceHandleCommonT for InterfaceHandle {
     }
 
     fn try_from_index(index: u32) -> Result<crate::InterfaceHandle, Error> {
-        let handle = crate::InterfaceHandle::from_index_unchecked(index);
-        indextoname(index).map(|_| handle)
+        indextoname(index).map(|_| crate::InterfaceHandle::from_index_unchecked(index))
     }
 
     fn try_from_name(name: &str) -> Result<crate::InterfaceHandle, Error> {
-        let cname = CString::new(name).map_err(|_| Error::InvalidParameter)?;
-        match unsafe { libc::if_nametoindex(cname.as_ptr() as _) } {
-            0 => Err(Error::InterfaceNotFound),
-            n => Ok(crate::InterfaceHandle::from_index_unchecked(n)),
-        }
+        nametoindex(name).map(crate::InterfaceHandle::from_index_unchecked)
     }
 }
 
