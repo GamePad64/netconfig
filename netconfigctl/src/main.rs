@@ -1,7 +1,6 @@
 #[cfg(target_os = "windows")]
-use netconfig::win32::MetadataExt;
+use netconfig::sys::MetadataExt;
 use netconfig::{list_addresses, list_interfaces};
-use netconfig::{InterfaceHandleCommonT, MetadataCommonT};
 
 use clap::{Parser, Subcommand};
 
@@ -29,6 +28,7 @@ fn main() {
         Commands::ListInterfaces => {
             for handle in list_interfaces().iter() {
                 let metadata = handle.metadata().unwrap();
+                println!("Index: {}", metadata.index());
                 println!("Name: {}", metadata.name());
                 cfg_if::cfg_if! {
                     if #[cfg(target_os = "windows")] {

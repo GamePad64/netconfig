@@ -1,4 +1,3 @@
-use crate::win32::handle::{InterfaceHandle, InterfaceHandleExt};
 use crate::MetadataCommonT;
 use windows::core::GUID;
 use windows::Win32::NetworkManagement::IpHelper::NET_LUID_LH;
@@ -35,6 +34,8 @@ impl MetadataExt for crate::Metadata {
 
 #[derive(Default)]
 pub(crate) struct Metadata {
+    pub(crate) handle: crate::InterfaceHandle,
+
     pub(crate) luid: NET_LUID_LH,
     pub(crate) guid: GUID,
     pub(crate) index: u32,
@@ -50,10 +51,14 @@ impl MetadataCommonT for Metadata {
     }
 
     fn handle(&self) -> crate::InterfaceHandle {
-        crate::InterfaceHandle(InterfaceHandle::from_luid(self.luid))
+        self.handle
     }
 
     fn mtu(&self) -> u32 {
         self.mtu
+    }
+
+    fn index(&self) -> u32 {
+        self.index
     }
 }

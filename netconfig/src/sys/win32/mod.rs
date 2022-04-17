@@ -1,7 +1,8 @@
 use windows::Win32::NetworkManagement::IpHelper::{FreeMibTable, GetIpInterfaceTable};
 use windows::Win32::Networking::WinSock::AF_UNSPEC;
 
-pub(crate) use handle::InterfaceHandle;
+use crate::sys::InterfaceHandle;
+use crate::InterfaceHandleCommonT;
 pub use handle::InterfaceHandleExt;
 pub(crate) use metadata::Metadata;
 pub use metadata::MetadataExt;
@@ -27,9 +28,8 @@ pub(crate) fn list_interfaces() -> Vec<crate::InterfaceHandle> {
             let mut result = Vec::with_capacity((*(*table)).NumEntries as _);
             for i in 0..(*(*table)).NumEntries as _ {
                 let row = &(*(*table)).Table.get_unchecked(i);
-                result.push(crate::InterfaceHandle(InterfaceHandle::from_luid(
-                    row.InterfaceLuid,
-                )));
+                let handle = InterfaceHandle::try_from_index(row.InterfaceIndex).unwrap();
+                result.push(handle);
             }
             result
         } else {

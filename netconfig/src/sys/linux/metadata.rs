@@ -1,10 +1,12 @@
-use crate::linux::handle::InterfaceHandleExt;
 use crate::MetadataCommonT;
 
 #[derive(Default)]
 pub(crate) struct Metadata {
+    pub(crate) handle: crate::InterfaceHandle,
+
     pub(crate) name: String,
     pub(crate) mtu: u32,
+    pub(crate) index: u32,
 }
 
 impl MetadataCommonT for Metadata {
@@ -13,10 +15,17 @@ impl MetadataCommonT for Metadata {
     }
 
     fn handle(&self) -> crate::InterfaceHandle {
-        crate::InterfaceHandle::from_name(&*self.name())
+        self.handle
     }
 
     fn mtu(&self) -> u32 {
         self.mtu
     }
+
+    fn index(&self) -> u32 {
+        self.index
+    }
 }
+
+pub trait MetadataExt {}
+impl MetadataExt for crate::Metadata {}

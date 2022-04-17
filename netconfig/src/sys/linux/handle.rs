@@ -1,8 +1,9 @@
-use crate::linux::ifreq::{ifreq as InterfaceRequest, siocsifmtu};
-use crate::linux::Metadata;
+use super::ifreq::{ifreq as InterfaceRequest, siocsifmtu};
+use super::Metadata;
+use crate::sys::InterfaceHandle;
 use crate::{Error, InterfaceHandleCommonT};
 use ipnet::IpNet;
-use libc::{if_nametoindex, AF_INET, AF_INET6, NLM_F_MULTI};
+use libc::{AF_INET, AF_INET6, NLM_F_MULTI};
 use log::{debug, warn};
 use netlink_packet_route::address::Nla as AddressNla;
 use netlink_packet_route::link::nlas::Nla as LinkNla;
@@ -14,58 +15,44 @@ use netlink_sys::constants::NETLINK_ROUTE;
 use netlink_sys::{Socket, SocketAddr};
 use nix::ifaddrs::getifaddrs;
 use nix::sys::socket::SockAddr::Inet;
+use std::ffi::CStr;
 use std::net;
 use std::net::IpAddr;
 use std::os::unix::io::AsRawFd;
-use std::sync::Arc;
-
-pub(crate) struct InterfaceHandle {
-    name: String,
-    socket: Arc<net::UdpSocket>,
-}
 
 pub trait InterfaceHandleExt {
-    fn from_name(name: &str) -> Self;
+    fn try_from_name(name: &str) -> Result<crate::InterfaceHandle, Error>;
+}
+
+fn indextoname(index: u32) -> Result<String, Error> {
+    let mut buf = vec![0i8; libc::IF_NAMESIZE + 1];
+    let ret_buf = unsafe { libc::if_indextoname(index, buf.as_mut_ptr() as _) };
+
+    if ret_buf.is_null() {
+        return Err(Error::InterfaceNotFound);
+    }
+
+    println!("{buf:?}");
+
+    match unsafe { CStr::from_ptr(buf.as_ptr()) }.to_str() {
+        Ok(s) => Ok(s.to_string()),
+        Err(_) => Err(Error::UnexpectedMetadata),
+    }
 }
 
 impl InterfaceHandle {
-    fn make_socket() -> Arc<net::UdpSocket> {
-        Arc::new(net::UdpSocket::bind("[::1]:0").expect("Socket is bound"))
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn index(&self) -> Result<u32, Error> {
-        let name = std::ffi::CString::new(&*self.name).unwrap();
-        let index = unsafe { if_nametoindex(name.as_ptr()) };
-        if index == 0 {
-            Err(Error::InterfaceNotFound)
-        } else {
-            Ok(index)
-        }
-    }
-}
-
-impl InterfaceHandleExt for InterfaceHandle {
-    fn from_name(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            socket: Self::make_socket(),
-        }
-    }
-}
-
-impl InterfaceHandleExt for crate::InterfaceHandle {
-    fn from_name(name: &str) -> Self {
-        Self(InterfaceHandle::from_name(name))
+    fn name(&self) -> Result<String, Error> {
+        indextoname(self.index)
     }
 }
 
 impl InterfaceHandleCommonT for InterfaceHandle {
     fn metadata(&self) -> Result<crate::Metadata, Error> {
-        let mut metadata = Metadata::default();
+        let mut metadata = Metadata {
+            handle: crate::InterfaceHandle(*self),
+            index: self.index,
+            ..Metadata::default()
+        };
 
         let mut socket = Socket::new(NETLINK_ROUTE).unwrap();
         socket.bind_auto().unwrap();
@@ -73,7 +60,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
 
         let mut message = LinkMessage::default();
         message.header.change_mask = 0xffff_ffff;
-        message.header.index = self.index().unwrap();
+        message.header.index = metadata.index;
 
         let mut req = NetlinkMessage {
             header: NetlinkHeader {
@@ -143,7 +130,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         socket.bind_auto().unwrap();
         socket.connect(&SocketAddr::new(0, 0)).unwrap();
 
-        let message = make_address_message(self.index().unwrap(), network);
+        let message = make_address_message(self.index, network);
 
         let mut req = NetlinkMessage {
             header: NetlinkHeader {
@@ -167,7 +154,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         socket.bind_auto().unwrap();
         socket.connect(&SocketAddr::new(0, 0)).unwrap();
 
-        let message = make_address_message(self.index().unwrap(), network);
+        let message = make_address_message(self.index, network);
 
         let mut req = NetlinkMessage {
             header: NetlinkHeader {
@@ -188,8 +175,9 @@ impl InterfaceHandleCommonT for InterfaceHandle {
 
     fn get_addresses(&self) -> Result<Vec<IpNet>, Error> {
         let mut result = vec![];
+        let interface_name = self.name()?;
 
-        for interface in getifaddrs()?.filter(|x| x.interface_name == self.name) {
+        for interface in getifaddrs()?.filter(|x| x.interface_name == interface_name) {
             if interface.address.is_none() || interface.netmask.is_none() {
                 continue;
             }
@@ -220,10 +208,25 @@ impl InterfaceHandleCommonT for InterfaceHandle {
     }
 
     fn set_mtu(&self, mtu: u32) -> Result<(), Error> {
-        let mut req = InterfaceRequest::new(self.name());
+        let mut req = InterfaceRequest::new(&*self.name()?);
         req.ifr_ifru.ifru_mtu = mtu as libc::c_int;
-        unsafe { siocsifmtu(self.socket.as_raw_fd(), &req) }?;
+
+        let socket = make_dummy_socket();
+
+        unsafe { siocsifmtu(socket.as_raw_fd(), &req) }?;
         Ok(())
+    }
+
+    fn try_from_index(index: u32) -> Result<crate::InterfaceHandle, Error> {
+        let handle = crate::InterfaceHandle::from_index_unchecked(index);
+        indextoname(index).map(|_| handle)
+    }
+
+    fn try_from_name(name: &str) -> Result<crate::InterfaceHandle, Error> {
+        match unsafe { libc::if_nametoindex(name.as_ptr() as _) } {
+            0 => Err(Error::InterfaceNotFound),
+            n => Ok(crate::InterfaceHandle::from_index_unchecked(n)),
+        }
     }
 }
 
@@ -261,4 +264,8 @@ fn make_address_message(index: u32, network: IpNet) -> AddressMessage {
     }
 
     message
+}
+
+fn make_dummy_socket() -> net::UdpSocket {
+    net::UdpSocket::bind("[::1]:0").expect("Socket is bound")
 }
