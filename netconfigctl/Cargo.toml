@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-netconfig = { version = "0.1.1", path = "../netconfig"}
+netconfig = { version = "0.1.1", path = ".."}
 env_logger = "0.9.0"
 cfg-if = "1.0.0"
 clap = { version = "3.1.9", features = ["derive"] }
