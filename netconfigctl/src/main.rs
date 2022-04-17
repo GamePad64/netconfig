@@ -1,4 +1,4 @@
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use netconfig::sys::MetadataExt;
 use netconfig::{list_addresses, list_interfaces};
 
@@ -31,8 +31,12 @@ fn main() {
                 println!("Index: {}", metadata.index());
                 println!("Name: {}", metadata.name());
                 cfg_if::cfg_if! {
-                    if #[cfg(target_os = "windows")] {
+                    if #[cfg(any(target_os = "macos", target_os = "windows"))] {
                         println!("Alias: {}", metadata.alias());
+                    }
+                }
+                cfg_if::cfg_if! {
+                    if #[cfg(target_os = "windows")] {
                         println!("GUID: {:?}", metadata.guid());
                         println!("LUID: {:?}", unsafe { metadata.luid().Value });
                     }

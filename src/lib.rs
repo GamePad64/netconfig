@@ -11,7 +11,7 @@ pub mod sys;
 ///
 /// Index is chosen, because basically all operating systems use index as an identifier.
 /// This struct can be used to manipulate interface parameters, such as IP address and MTU.
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct InterfaceHandle(sys::InterfaceHandle);
 pub struct Metadata(sys::Metadata);
 
