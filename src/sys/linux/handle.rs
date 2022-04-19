@@ -1,8 +1,10 @@
 use super::ifreq::{ifreq as InterfaceRequest, siocsifmtu};
 use super::Metadata;
+use crate::sys::linux::ifreq::{ifreq, siocgifflags, siocsifflags};
 use crate::sys::posix::{ifaceaddr, indextoname, nametoindex};
 use crate::sys::InterfaceHandle;
 use crate::{Error, InterfaceHandleCommonT};
+use delegate::delegate;
 use ipnet::IpNet;
 use libc::{AF_INET, AF_INET6, NLM_F_MULTI};
 use log::{debug, warn};
@@ -14,20 +16,52 @@ use netlink_packet_route::{
 };
 use netlink_sys::constants::NETLINK_ROUTE;
 use netlink_sys::{Socket, SocketAddr};
-use nix::ifaddrs::getifaddrs;
-use nix::sys::socket::SockAddr::Inet;
-use std::ffi::CString;
 use std::net;
 use std::net::IpAddr;
 use std::os::unix::io::AsRawFd;
 
+// Public interface (platform extension)
 pub trait InterfaceHandleExt {
-    fn try_from_name(name: &str) -> Result<crate::InterfaceHandle, Error>;
+    fn set_up(&self, v: bool) -> Result<(), Error>;
+    fn set_running(&self, v: bool) -> Result<(), Error>;
 }
 
+impl InterfaceHandleExt for crate::InterfaceHandle {
+    delegate! {
+        to self.0 {
+            fn set_up(&self, v: bool) -> Result<(), Error>;
+            fn set_running(&self, v: bool) -> Result<(), Error>;
+        }
+    }
+}
+
+// Private interface
 impl InterfaceHandle {
     fn name(&self) -> Result<String, Error> {
         indextoname(self.index)
+    }
+
+    fn flags(&self) -> Result<i16, Error> {
+        let mut req = ifreq::new(self.name()?);
+
+        let socket = make_dummy_socket();
+
+        unsafe {
+            siocgifflags(socket.as_raw_fd(), &mut req)?;
+            Ok(req.ifr_ifru.ifru_flags)
+        }
+    }
+
+    fn set_flags(&self, flags: i16) -> Result<i16, Error> {
+        let mut req = ifreq::new(self.name()?);
+        req.ifr_ifru.ifru_flags = flags;
+
+        let socket = make_dummy_socket();
+
+        unsafe {
+            siocsifflags(socket.as_raw_fd(), &mut req)?;
+            Ok(req.ifr_ifru.ifru_flags)
+        }
     }
 }
 
@@ -163,7 +197,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
     }
 
     fn set_mtu(&self, mtu: u32) -> Result<(), Error> {
-        let mut req = InterfaceRequest::new(&*self.name()?);
+        let mut req = InterfaceRequest::new(self.name()?);
         req.ifr_ifru.ifru_mtu = mtu as libc::c_int;
 
         let socket = make_dummy_socket();
@@ -178,6 +212,28 @@ impl InterfaceHandleCommonT for InterfaceHandle {
 
     fn try_from_name(name: &str) -> Result<crate::InterfaceHandle, Error> {
         nametoindex(name).map(crate::InterfaceHandle::from_index_unchecked)
+    }
+}
+
+impl InterfaceHandleExt for InterfaceHandle {
+    fn set_up(&self, v: bool) -> Result<(), Error> {
+        let mut flags = self.flags()?;
+        if v {
+            flags |= libc::IFF_UP as i16;
+        } else {
+            flags &= !(libc::IFF_UP as i16);
+        }
+        self.set_flags(flags).map(|_| ())
+    }
+
+    fn set_running(&self, v: bool) -> Result<(), Error> {
+        let mut flags = self.flags()?;
+        if v {
+            flags |= libc::IFF_RUNNING as i16;
+        } else {
+            flags &= !(libc::IFF_RUNNING as i16);
+        }
+        self.set_flags(flags).map(|_| ())
     }
 }
 

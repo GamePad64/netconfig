@@ -7,6 +7,9 @@ pub(crate) struct Metadata {
     pub(crate) name: String,
     pub(crate) mtu: u32,
     pub(crate) index: u32,
+
+    pub(crate) up: bool,
+    pub(crate) running: bool,
 }
 
 impl MetadataCommonT for Metadata {
@@ -27,5 +30,16 @@ impl MetadataCommonT for Metadata {
     }
 }
 
-pub trait MetadataExt {}
-impl MetadataExt for crate::Metadata {}
+pub trait MetadataExt {
+    fn up(&self) -> bool;
+    fn running(&self) -> bool;
+}
+
+impl MetadataExt for crate::Metadata {
+    fn up(&self) -> bool {
+        self.up
+    }
+    fn running(&self) -> bool {
+        self.running
+    }
+}

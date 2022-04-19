@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 use bitflags::bitflags;
+use std::ffi::CString;
 use std::fmt::Debug;
 use std::mem;
 
@@ -75,18 +76,14 @@ bitflags! {
 }
 
 impl ifreq {
-    fn make_ifname(name: &str) -> IfName {
-        let mut ifname: IfName = [0; libc::IFNAMSIZ as _];
-        ifname
-            .iter_mut()
-            .zip(name.as_bytes().iter().take((libc::IFNAMSIZ - 1) as _))
-            .for_each(|(x, z)| {
-                *x = *z as _;
-            });
-        ifname
+    fn make_ifname(mut name: String) -> IfName {
+        name.truncate(libc::IFNAMSIZ - 1);
+        let name = CString::new(name).unwrap();
+
+        IfName::try_from(unsafe { &*(name.as_bytes() as *const _ as *const [i8]) }).unwrap()
     }
 
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: String) -> Self {
         let mut req: ifreq = unsafe { mem::zeroed() };
 
         if !name.is_empty() {
