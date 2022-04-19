@@ -59,7 +59,7 @@ impl InterfaceHandle {
         let socket = make_dummy_socket();
 
         unsafe {
-            siocsifflags(socket.as_raw_fd(), &mut req)?;
+            siocsifflags(socket.as_raw_fd(), &req)?;
             Ok(req.ifr_ifru.ifru_flags)
         }
     }

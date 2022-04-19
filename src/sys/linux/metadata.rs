@@ -37,9 +37,9 @@ pub trait MetadataExt {
 
 impl MetadataExt for crate::Metadata {
     fn up(&self) -> bool {
-        self.up
+        self.0.up
     }
     fn running(&self) -> bool {
-        self.running
+        self.0.running
     }
 }

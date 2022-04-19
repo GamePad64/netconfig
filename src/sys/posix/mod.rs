@@ -6,7 +6,7 @@ use std::ffi::{CStr, CString};
 use std::net::IpAddr;
 
 pub(crate) fn indextoname(index: u32) -> Result<String, Error> {
-    let mut buf = vec![0i8; libc::IF_NAMESIZE + 1];
+    let mut buf = [0i8; libc::IF_NAMESIZE];
     let ret_buf = unsafe { libc::if_indextoname(index, buf.as_mut_ptr() as _) };
 
     if ret_buf.is_null() {

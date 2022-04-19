@@ -3,7 +3,6 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
-use bitflags::bitflags;
 use std::ffi::CString;
 use std::fmt::Debug;
 use std::mem;
@@ -58,21 +57,6 @@ pub struct ifmap {
     pub irq: libc::c_uchar,
     pub dma: libc::c_uchar,
     pub port: libc::c_uchar,
-}
-
-bitflags! {
-    pub struct RtFlags: libc::c_ushort {
-        const RTF_UP        = 0x0001;
-        const RTF_GATEWAY   = 0x0002;
-        const RTF_HOST      = 0x0004;
-        const RTF_REINSTATE = 0x0008;
-        const RTF_DYNAMIC   = 0x0010;
-        const RTF_MODIFIED  = 0x0020;
-        const RTF_MTU       = 0x0040; //RTF_MTU alias
-        const RTF_WINDOW    = 0x0080;
-        const RTF_IRTT      = 0x0100;
-        const RTF_REJECT    = 0x0200;
-    }
 }
 
 impl ifreq {
