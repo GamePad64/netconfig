@@ -6,7 +6,6 @@ pub(crate) use metadata::Metadata;
 pub use metadata::MetadataExt;
 
 mod handle;
-mod ifreq;
 mod metadata;
 
 pub(crate) fn list_interfaces() -> Vec<crate::InterfaceHandle> {

@@ -1,3 +1,5 @@
+pub(crate) mod ifreq;
+
 use crate::Error;
 use ipnet::IpNet;
 use nix::ifaddrs::getifaddrs;
@@ -5,7 +7,7 @@ use nix::sys::socket::SockAddr::Inet;
 use std::ffi::{CStr, CString};
 use std::net::IpAddr;
 
-pub(crate) fn indextoname(index: u32) -> Result<String, Error> {
+pub(crate) fn if_indextoname(index: u32) -> Result<String, Error> {
     let mut buf = [0i8; libc::IF_NAMESIZE];
     let ret_buf = unsafe { libc::if_indextoname(index, buf.as_mut_ptr() as _) };
 
@@ -19,7 +21,7 @@ pub(crate) fn indextoname(index: u32) -> Result<String, Error> {
     }
 }
 
-pub(crate) fn nametoindex(name: &str) -> Result<u32, Error> {
+pub(crate) fn if_nametoindex(name: &str) -> Result<u32, Error> {
     let cname = CString::new(name).map_err(|_| Error::InvalidParameter)?;
     match unsafe { libc::if_nametoindex(cname.as_ptr() as _) } {
         0 => Err(Error::InterfaceNotFound),
@@ -27,7 +29,7 @@ pub(crate) fn nametoindex(name: &str) -> Result<u32, Error> {
     }
 }
 
-pub(crate) fn ifaceaddr(interface_name: &str) -> Result<Vec<IpNet>, Error> {
+pub(crate) fn if_addr(interface_name: &str) -> Result<Vec<IpNet>, Error> {
     let mut result = vec![];
 
     for interface in getifaddrs()?.filter(|x| x.interface_name == interface_name) {
