@@ -23,8 +23,9 @@ system-configuration-sys = "0.5.0"
 core-foundation = "0.9.3"
 
 [target.'cfg(unix)'.dependencies]
-nix = "0.23.1"
+nix = "0.24.0"
 libc = "0.2.123"
+ipnetwork = "0.19.0"
 
 [dependencies]
 ipnet = "2.4.0"

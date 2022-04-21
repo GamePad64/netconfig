@@ -1,14 +1,41 @@
 pub mod ifreq;
 
-use crate::sys::posix::ifreq::siocsifmtu;
 use crate::Error;
 use ipnet::IpNet;
 use nix::ifaddrs::getifaddrs;
-use nix::sys::socket::SockAddr::Inet;
+use nix::sys::socket::AddressFamily::{Inet, Inet6};
+use nix::sys::socket::{SockaddrIn, SockaddrIn6, SockaddrLike};
 use std::ffi::{CStr, CString};
 use std::net;
-use std::net::IpAddr;
 use std::os::unix::io::AsRawFd;
+
+mod ioctls {
+    cfg_if::cfg_if! {
+        if #[cfg(target_os = "linux")] {
+            nix::ioctl_write_ptr_bad!(siocsifmtu, libc::SIOCSIFMTU, super::ifreq::ifreq);
+            nix::ioctl_write_ptr_bad!(siocsifflags, libc::SIOCSIFFLAGS, super::ifreq::ifreq);
+            nix::ioctl_write_ptr_bad!(siocsifaddr, libc::SIOCSIFADDR, super::ifreq::ifreq);
+            nix::ioctl_write_ptr_bad!(siocsifdstaddr, libc::SIOCSIFDSTADDR, super::ifreq::ifreq);
+            nix::ioctl_write_ptr_bad!(siocsifbrdaddr, libc::SIOCSIFBRDADDR, super::ifreq::ifreq);
+            nix::ioctl_write_ptr_bad!(siocsifnetmask, libc::SIOCSIFNETMASK, super::ifreq::ifreq);
+
+            nix::ioctl_read_bad!(siocgifmtu, libc::SIOCGIFMTU, super::ifreq::ifreq);
+            nix::ioctl_read_bad!(siocgifflags, libc::SIOCGIFFLAGS, super::ifreq::ifreq);
+            nix::ioctl_read_bad!(siocgifaddr, libc::SIOCGIFADDR, super::ifreq::ifreq);
+            nix::ioctl_read_bad!(siocgifdstaddr, libc::SIOCGIFDSTADDR, super::ifreq::ifreq);
+            nix::ioctl_read_bad!(siocgifbrdaddr, libc::SIOCGIFBRDADDR, super::ifreq::ifreq);
+            nix::ioctl_read_bad!(siocgifnetmask, libc::SIOCGIFNETMASK, super::ifreq::ifreq);
+        } else if #[cfg(target_os = "macos")] {
+            nix::ioctl_readwrite!(siocgifmtu, b'i', 51, super::ifreq::ifreq);
+            nix::ioctl_write_ptr!(siocsifmtu, b'i', 52, super::ifreq::ifreq);
+            nix::ioctl_readwrite!(siocgifflags, b'i', 17, super::ifreq::ifreq);
+            nix::ioctl_write_ptr!(siocsifflags, b'i', 16, super::ifreq::ifreq);
+            nix::ioctl_write_ptr!(siocaifaddr4, b'i', 26, super::ifreq::ifaliasreq4);
+            nix::ioctl_write_ptr!(siocaifaddr6, b'i', 26, super::ifreq::ifaliasreq6);
+            nix::ioctl_write_ptr!(siocdifaddr, b'i', 25, super::ifreq::ifreq);
+        }
+    }
+}
 
 pub(crate) fn if_indextoname(index: u32) -> Result<String, Error> {
     let mut buf = [0i8; libc::IF_NAMESIZE];
@@ -32,14 +59,85 @@ pub(crate) fn if_nametoindex(name: &str) -> Result<u32, Error> {
     }
 }
 
+pub(crate) fn if_mtu(name: &str) -> Result<u32, Error> {
+    let mut req = ifreq::ifreq::new(name);
+
+    let socket = make_dummy_socket();
+
+    unsafe { ioctls::siocgifmtu(socket.as_raw_fd(), &mut req) }?;
+    Ok(unsafe { req.ifr_ifru.ifru_mtu } as u32)
+}
+
 pub(crate) fn if_set_mtu(name: &str, mtu: u32) -> Result<(), Error> {
     let mut req = ifreq::ifreq::new(name);
     req.ifr_ifru.ifru_mtu = mtu as libc::c_int;
 
     let socket = make_dummy_socket();
 
-    unsafe { siocsifmtu(socket.as_raw_fd(), &req) }?;
+    unsafe { ioctls::siocsifmtu(socket.as_raw_fd(), &req) }?;
     Ok(())
+}
+
+pub(crate) fn if_flags(name: &str) -> Result<i16, Error> {
+    let mut req = ifreq::ifreq::new(name);
+
+    let socket = make_dummy_socket();
+
+    unsafe {
+        ioctls::siocgifflags(socket.as_raw_fd(), &mut req)?;
+        Ok(req.ifr_ifru.ifru_flags)
+    }
+}
+
+pub(crate) fn if_set_flags(name: &str, flags: i16) -> Result<i16, Error> {
+    let mut req = ifreq::ifreq::new(name);
+    req.ifr_ifru.ifru_flags = flags;
+
+    let socket = make_dummy_socket();
+
+    unsafe {
+        ioctls::siocsifflags(socket.as_raw_fd(), &req)?;
+        Ok(req.ifr_ifru.ifru_flags)
+    }
+}
+
+pub(crate) fn if_add_addr(name: &str, addr: IpNet) -> Result<(), Error> {
+    let socket = make_dummy_socket();
+    match addr {
+        IpNet::V4(addr4) => {
+            let ifra_addr = SockaddrIn::from(net::SocketAddrV4::new(addr4.addr(), 0));
+            let ifra_broadaddr = SockaddrIn::from(net::SocketAddrV4::new(addr4.broadcast(), 0));
+            let ifra_mask = SockaddrIn::from(net::SocketAddrV4::new(addr4.netmask(), 0));
+
+            let req = ifreq::ifaliasreq4 {
+                ifra_name: name.parse().unwrap(),
+                ifra_addr: *ifra_addr.as_ref(),
+                ifra_broadaddr: *ifra_broadaddr.as_ref(),
+                ifra_mask: *ifra_mask.as_ref(),
+            };
+
+            Ok(unsafe {
+                ioctls::siocaifaddr4(socket.as_raw_fd(), &req)?;
+            })
+        }
+        IpNet::V6(addr6) => {
+            let ifra_addr = SockaddrIn6::from(net::SocketAddrV6::new(addr6.addr(), 0, 0, 0));
+            let ifra_broadaddr =
+                SockaddrIn6::from(net::SocketAddrV6::new(addr6.broadcast(), 0, 0, 0));
+            let ifra_mask = SockaddrIn6::from(net::SocketAddrV6::new(addr6.netmask(), 0, 0, 0));
+
+            let req = ifreq::ifaliasreq6 {
+                ifra_name: name.parse().unwrap(),
+                ifra_addr: *ifra_addr.as_ref(),
+                ifra_broadaddr: *ifra_broadaddr.as_ref(),
+                ifra_mask: *ifra_mask.as_ref(),
+            };
+
+            Ok(unsafe {
+                ioctls::siocaifaddr6(socket.as_raw_fd(), &req)?;
+            })
+        }
+    }
 }
 
 pub(crate) fn if_addr(interface_name: &str) -> Result<Vec<IpNet>, Error> {
@@ -50,24 +148,25 @@ pub(crate) fn if_addr(interface_name: &str) -> Result<Vec<IpNet>, Error> {
             continue;
         }
 
-        if let (Some(Inet(address)), Some(Inet(netmask))) = (interface.address, interface.netmask) {
-            let prefix_len: u8 = match netmask.ip().to_std() {
-                IpAddr::V4(addr) => addr
-                    .octets()
-                    .iter()
-                    .map(|byte| byte.leading_ones() as u8)
-                    .sum(),
-                IpAddr::V6(addr) => addr
-                    .octets()
-                    .iter()
-                    .map(|byte| byte.leading_ones() as u8)
-                    .sum(),
+        if let (Some(address), Some(netmask)) = (interface.address, interface.netmask) {
+            let network = if address.family().unwrap() == Inet && netmask.family().unwrap() == Inet
+            {
+                let addr: net::Ipv4Addr = address.as_sockaddr_in().unwrap().ip().into();
+                let prefix =
+                    ipnetwork::ipv4_mask_to_prefix(netmask.as_sockaddr_in().unwrap().ip().into())
+                        .unwrap();
+                IpNet::new(addr.into(), prefix).unwrap()
+            } else if address.family().unwrap() == Inet6 && netmask.family().unwrap() == Inet6 {
+                let addr: net::Ipv6Addr = address.as_sockaddr_in6().unwrap().ip();
+                let prefix =
+                    ipnetwork::ipv6_mask_to_prefix(netmask.as_sockaddr_in6().unwrap().ip())
+                        .unwrap();
+                IpNet::new(addr.into(), prefix).unwrap()
+            } else {
+                return Err(Error::InternalError);
             };
 
-            result.push(
-                IpNet::new(address.ip().to_std(), prefix_len)
-                    .expect("IP address and netmask converted"),
-            );
+            result.push(network);
         }
     }
     Ok(result)

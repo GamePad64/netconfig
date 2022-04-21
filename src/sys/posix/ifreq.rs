@@ -6,27 +6,41 @@
 use std::ffi::CString;
 use std::fmt::Debug;
 use std::mem;
+use std::str::FromStr;
 
-nix::ioctl_write_ptr_bad!(siocsifmtu, libc::SIOCSIFMTU, ifreq);
-nix::ioctl_write_ptr_bad!(siocsifflags, libc::SIOCSIFFLAGS, ifreq);
-nix::ioctl_write_ptr_bad!(siocsifaddr, libc::SIOCSIFADDR, ifreq);
-nix::ioctl_write_ptr_bad!(siocsifdstaddr, libc::SIOCSIFDSTADDR, ifreq);
-nix::ioctl_write_ptr_bad!(siocsifbrdaddr, libc::SIOCSIFBRDADDR, ifreq);
-nix::ioctl_write_ptr_bad!(siocsifnetmask, libc::SIOCSIFNETMASK, ifreq);
+pub type IfName = [libc::c_char; libc::IFNAMSIZ as _]; // Null-terminated
 
-nix::ioctl_read_bad!(siocgifmtu, libc::SIOCGIFMTU, ifreq);
-nix::ioctl_read_bad!(siocgifflags, libc::SIOCGIFFLAGS, ifreq);
-nix::ioctl_read_bad!(siocgifaddr, libc::SIOCGIFADDR, ifreq);
-nix::ioctl_read_bad!(siocgifdstaddr, libc::SIOCGIFDSTADDR, ifreq);
-nix::ioctl_read_bad!(siocgifbrdaddr, libc::SIOCGIFBRDADDR, ifreq);
-nix::ioctl_read_bad!(siocgifnetmask, libc::SIOCGIFNETMASK, ifreq);
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct InterfaceName(pub [libc::c_char; libc::IFNAMSIZ as _]);
 
-pub(crate) type IfName = [libc::c_char; libc::IFNAMSIZ as _]; // Null-terminated
+impl FromStr for InterfaceName {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut s = s.to_string();
+        s.truncate(libc::IFNAMSIZ - 1);
+        let name = CString::new(s).unwrap();
+
+        type IfName = [libc::c_char; libc::IFNAMSIZ as _];
+        Ok(Self(
+            IfName::try_from(unsafe { &*(name.as_bytes() as *const _ as *const [i8]) }).unwrap(),
+        ))
+    }
+}
+
+impl ToString for InterfaceName {
+    fn to_string(&self) -> String {
+        unsafe { std::ffi::CStr::from_ptr(self.0.as_ptr()) }
+            .to_string_lossy()
+            .to_string()
+    }
+}
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ifreq {
-    pub ifr_ifrn: IfName,
+    pub ifr_ifrn: InterfaceName,
     pub ifr_ifru: ifreq_ifru,
 }
 
@@ -42,8 +56,8 @@ pub union ifreq_ifru {
     pub ifru_ivalue: libc::c_int,
     pub ifru_mtu: libc::c_int,
     pub ifru_map: ifmap,
-    pub ifru_slave: IfName,
-    pub ifru_newname: IfName,
+    pub ifru_slave: InterfaceName,
+    pub ifru_newname: InterfaceName,
     pub ifru_data: *mut libc::c_char,
     align: [u64; 3usize],
 }
@@ -59,24 +73,29 @@ pub struct ifmap {
     pub port: libc::c_uchar,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ifaliasreq4 {
+    pub ifra_name: InterfaceName,
+    pub ifra_addr: libc::sockaddr_in,
+    pub ifra_broadaddr: libc::sockaddr_in,
+    pub ifra_mask: libc::sockaddr_in,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ifaliasreq6 {
+    pub ifra_name: InterfaceName,
+    pub ifra_addr: libc::sockaddr_in6,
+    pub ifra_broadaddr: libc::sockaddr_in6,
+    pub ifra_mask: libc::sockaddr_in6,
+}
+
 impl ifreq {
-    fn make_ifname(mut name: String) -> IfName {
-        name.truncate(libc::IFNAMSIZ - 1);
-        let name = CString::new(name).unwrap();
-
-        IfName::try_from(unsafe { &*(name.as_bytes() as *const _ as *const [i8]) }).unwrap()
-    }
-
     pub fn new<T: Into<String>>(name: T) -> Self {
         let mut req: ifreq = unsafe { mem::zeroed() };
 
-        req.ifr_ifrn = Self::make_ifname(name.into());
+        req.ifr_ifrn = name.into().parse().unwrap();
         req
-    }
-
-    pub fn name(&self) -> String {
-        unsafe { std::ffi::CStr::from_ptr(self.ifr_ifrn.as_ptr()) }
-            .to_string_lossy()
-            .to_string()
     }
 }

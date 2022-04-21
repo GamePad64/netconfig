@@ -20,7 +20,7 @@ impl MetadataCommonT for Metadata {
     }
 
     fn mtu(&self) -> u32 {
-        todo!()
+        self.mtu
     }
 
     fn index(&self) -> u32 {

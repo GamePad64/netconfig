@@ -28,7 +28,6 @@ fn main() {
         }
         Commands::ListInterfaces => {
             for handle in list_interfaces().iter() {
-                handle.set_up(true);
                 let metadata = handle.metadata().unwrap();
                 println!("Index: {}", metadata.index());
                 println!("Name: {}", metadata.name());
