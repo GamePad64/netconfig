@@ -5,6 +5,7 @@
 
 use std::ffi::CString;
 use std::fmt::Debug;
+use std::iter::zip;
 use std::mem;
 use std::str::FromStr;
 
@@ -23,9 +24,11 @@ impl FromStr for InterfaceName {
         let name = CString::new(s).unwrap();
 
         type IfName = [libc::c_char; libc::IFNAMSIZ as _];
-        Ok(Self(
-            IfName::try_from(unsafe { &*(name.as_bytes() as *const _ as *const [i8]) }).unwrap(),
-        ))
+        let mut result = IfName::default();
+        for (x, y) in zip(result.iter_mut(), name.as_bytes_with_nul().iter()) {
+            *x = *y as libc::c_char;
+        }
+        Ok(Self(result))
     }
 }
 

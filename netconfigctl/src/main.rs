@@ -1,6 +1,6 @@
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use netconfig::sys::MetadataExt;
-use netconfig::{list_addresses, list_interfaces};
+use netconfig::{list_addresses, list_interfaces, InterfaceHandle};
 
 use clap::{Parser, Subcommand};
 use netconfig::sys::InterfaceHandleExt;
@@ -15,6 +15,17 @@ struct Cli {
 enum Commands {
     ListInterfaces,
     ListAddresses,
+    SetIfParam {
+        iface: String,
+        #[clap(subcommand)]
+        param: IfParam,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum IfParam {
+    Up,
+    Down,
 }
 
 fn main() {
@@ -48,6 +59,13 @@ fn main() {
                     println!("Address: {:?}", address);
                 }
                 println!();
+            }
+        }
+        Commands::SetIfParam { iface, param } => {
+            let handle = InterfaceHandle::try_from_name(&*iface).unwrap();
+            match param {
+                IfParam::Up => handle.set_up(true).unwrap(),
+                IfParam::Down => handle.set_up(false).unwrap(),
             }
         }
     }
