@@ -101,6 +101,7 @@ pub(crate) fn if_set_flags(name: &str, flags: i16) -> Result<i16, Error> {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn if_add_addr(name: &str, addr: IpNet) -> Result<(), Error> {
     let socket = make_dummy_socket();
     match addr {

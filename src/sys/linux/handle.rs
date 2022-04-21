@@ -1,6 +1,7 @@
 use super::Metadata;
-use crate::sys::posix::ifreq::{ifreq as InterfaceRequest, siocgifflags, siocsifflags};
-use crate::sys::posix::{if_addr, if_indextoname, if_nametoindex, if_set_mtu, make_dummy_socket};
+use crate::sys::posix::{
+    if_addr, if_flags, if_indextoname, if_nametoindex, if_set_flags, if_set_mtu,
+};
 use crate::sys::InterfaceHandle;
 use crate::{Error, InterfaceHandleCommonT};
 use delegate::delegate;
@@ -16,7 +17,6 @@ use netlink_packet_route::{
 use netlink_sys::constants::NETLINK_ROUTE;
 use netlink_sys::{Socket, SocketAddr};
 use std::net::IpAddr;
-use std::os::unix::io::AsRawFd;
 
 // Public interface (platform extension)
 pub trait InterfaceHandleExt {
@@ -37,29 +37,6 @@ impl InterfaceHandleExt for crate::InterfaceHandle {
 impl InterfaceHandle {
     fn name(&self) -> Result<String, Error> {
         if_indextoname(self.index)
-    }
-
-    fn flags(&self) -> Result<i16, Error> {
-        let mut req = InterfaceRequest::new(self.name()?);
-
-        let socket = make_dummy_socket();
-
-        unsafe {
-            siocgifflags(socket.as_raw_fd(), &mut req)?;
-            Ok(req.ifr_ifru.ifru_flags)
-        }
-    }
-
-    fn set_flags(&self, flags: i16) -> Result<i16, Error> {
-        let mut req = InterfaceRequest::new(self.name()?);
-        req.ifr_ifru.ifru_flags = flags;
-
-        let socket = make_dummy_socket();
-
-        unsafe {
-            siocsifflags(socket.as_raw_fd(), &req)?;
-            Ok(req.ifr_ifru.ifru_flags)
-        }
     }
 }
 
@@ -209,23 +186,23 @@ impl InterfaceHandleCommonT for InterfaceHandle {
 
 impl InterfaceHandleExt for InterfaceHandle {
     fn set_up(&self, v: bool) -> Result<(), Error> {
-        let mut flags = self.flags()?;
+        let mut flags = if_flags(&*self.name()?)?;
         if v {
             flags |= libc::IFF_UP as i16;
         } else {
             flags &= !(libc::IFF_UP as i16);
         }
-        self.set_flags(flags).map(|_| ())
+        if_set_flags(&*self.name()?, flags).map(|_| ())
     }
 
     fn set_running(&self, v: bool) -> Result<(), Error> {
-        let mut flags = self.flags()?;
+        let mut flags = if_flags(&*self.name()?)?;
         if v {
             flags |= libc::IFF_RUNNING as i16;
         } else {
             flags &= !(libc::IFF_RUNNING as i16);
         }
-        self.set_flags(flags).map(|_| ())
+        if_set_flags(&*self.name()?, flags).map(|_| ())
     }
 }
 
