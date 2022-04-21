@@ -28,7 +28,7 @@ libc = "0.2.123"
 ipnetwork = "0.19.0"
 
 [dependencies]
-ipnet = "2.4.0"
+ipnet = "2.5.0"
 log = "0.4.16"
 cfg-if = "1.0.0"
 delegate = "0.6.2"
