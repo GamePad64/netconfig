@@ -1,6 +1,6 @@
 use super::Metadata;
-use crate::sys::posix::ifreq::{ifreq as InterfaceRequest, siocgifflags, siocsifflags, siocsifmtu};
-use crate::sys::posix::{if_addr, if_indextoname, if_nametoindex};
+use crate::sys::posix::ifreq::{ifreq as InterfaceRequest, siocgifflags, siocsifflags};
+use crate::sys::posix::{if_addr, if_indextoname, if_nametoindex, if_set_mtu, make_dummy_socket};
 use crate::sys::InterfaceHandle;
 use crate::{Error, InterfaceHandleCommonT};
 use delegate::delegate;
@@ -15,7 +15,6 @@ use netlink_packet_route::{
 };
 use netlink_sys::constants::NETLINK_ROUTE;
 use netlink_sys::{Socket, SocketAddr};
-use std::net;
 use std::net::IpAddr;
 use std::os::unix::io::AsRawFd;
 
@@ -96,7 +95,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         debug!(">>> {:?}", req);
         socket.send(&buf[..], 0).unwrap();
 
-        let mut receive_buffer = vec![0; 4096];
+        let mut receive_buffer = [0; 4096];
         let mut offset = 0;
 
         'outer: loop {
@@ -196,13 +195,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
     }
 
     fn set_mtu(&self, mtu: u32) -> Result<(), Error> {
-        let mut req = InterfaceRequest::new(self.name()?);
-        req.ifr_ifru.ifru_mtu = mtu as libc::c_int;
-
-        let socket = make_dummy_socket();
-
-        unsafe { siocsifmtu(socket.as_raw_fd(), &req) }?;
-        Ok(())
+        if_set_mtu(&*self.name()?, mtu)
     }
 
     fn try_from_index(index: u32) -> Result<crate::InterfaceHandle, Error> {
@@ -270,8 +263,4 @@ fn make_address_message(index: u32, network: IpNet) -> AddressMessage {
     }
 
     message
-}
-
-fn make_dummy_socket() -> net::UdpSocket {
-    net::UdpSocket::bind("[::1]:0").expect("Socket is bound")
 }

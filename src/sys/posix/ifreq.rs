@@ -67,12 +67,10 @@ impl ifreq {
         IfName::try_from(unsafe { &*(name.as_bytes() as *const _ as *const [i8]) }).unwrap()
     }
 
-    pub fn new(name: String) -> Self {
+    pub fn new<T: Into<String>>(name: T) -> Self {
         let mut req: ifreq = unsafe { mem::zeroed() };
 
-        if !name.is_empty() {
-            req.ifr_ifrn = Self::make_ifname(name);
-        }
+        req.ifr_ifrn = Self::make_ifname(name.into());
         req
     }
 

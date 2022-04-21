@@ -21,6 +21,6 @@ cfg_if::cfg_if! {
 
 cfg_if::cfg_if! {
     if #[cfg(unix)] {
-        pub(crate) mod posix;
+        pub mod posix;
     }
 }
