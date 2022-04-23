@@ -9,9 +9,7 @@ use std::iter::zip;
 use std::mem;
 use std::str::FromStr;
 
-pub type IfName = [libc::c_char; libc::IFNAMSIZ as _]; // Null-terminated
-
-#[repr(C)]
+#[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
 pub struct InterfaceName(pub [libc::c_char; libc::IFNAMSIZ as _]);
 

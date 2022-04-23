@@ -241,6 +241,7 @@ dependencies = [
  "nix",
  "scopeguard",
  "system-configuration-sys",
+ "thiserror",
  "widestring",
  "windows",
 ]
