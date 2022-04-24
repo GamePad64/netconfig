@@ -4,6 +4,8 @@ use crate::{Error, InterfaceHandleCommonT};
 use ipnet::IpNet;
 use log::warn;
 use std::collections::HashSet;
+use std::io;
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use widestring::{U16CStr, U16CString};
 use windows::core::{GUID, PCWSTR};
@@ -226,7 +228,9 @@ impl InterfaceHandleCommonT for InterfaceHandle {
                     warn!("Interface not found with family: {:?}", family);
                     continue;
                 }
-                Err(ERROR_ACCESS_DENIED) => Err(Error::AccessDenied),
+                Err(ERROR_ACCESS_DENIED) => {
+                    Err(io::Error::from(ErrorKind::PermissionDenied).into())
+                }
                 Err(_) => Err(Error::InternalError),
             }?;
         }

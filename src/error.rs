@@ -21,3 +21,9 @@ impl From<nix::Error> for Error {
         Error::InternalError
     }
 }
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::Io(e)
+    }
+}

@@ -15,6 +15,7 @@ struct Cli {
 enum Commands {
     ListInterfaces,
     ListAddresses,
+    #[cfg(unix)]
     SetIfParam {
         iface: String,
         #[clap(subcommand)]
@@ -61,6 +62,7 @@ fn main() {
                 println!();
             }
         }
+        #[cfg(unix)]
         Commands::SetIfParam { iface, param } => {
             let handle = InterfaceHandle::try_from_name(&*iface).unwrap();
             match param {
