@@ -100,6 +100,16 @@ pub(crate) fn if_set_flags(name: &str, flags: i16) -> Result<i16, Error> {
     }
 }
 
+pub(crate) fn if_set_flags_masked(name: &str, mask: i16, v: bool) -> Result<i16, Error> {
+    let mut flags = if_flags(name)?;
+    if v {
+        flags |= mask;
+    } else {
+        flags &= !mask;
+    }
+    if_set_flags(name, flags)
+}
+
 #[cfg(target_os = "macos")]
 pub(crate) fn if_add_addr(name: &str, addr: IpNet) -> Result<(), Error> {
     let socket = make_dummy_socket();

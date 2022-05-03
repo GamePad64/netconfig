@@ -1,6 +1,7 @@
 use super::Metadata;
 use crate::sys::posix::{
-    if_addr, if_flags, if_indextoname, if_nametoindex, if_set_flags, if_set_mtu,
+    if_addr, if_flags, if_indextoname, if_nametoindex, if_set_flags, if_set_flags_masked,
+    if_set_mtu,
 };
 use crate::sys::InterfaceHandle;
 use crate::{Error, InterfaceHandleCommonT};
@@ -186,23 +187,11 @@ impl InterfaceHandleCommonT for InterfaceHandle {
 
 impl InterfaceHandleExt for InterfaceHandle {
     fn set_up(&self, v: bool) -> Result<(), Error> {
-        let mut flags = if_flags(&*self.name()?)?;
-        if v {
-            flags |= libc::IFF_UP as i16;
-        } else {
-            flags &= !(libc::IFF_UP as i16);
-        }
-        if_set_flags(&*self.name()?, flags).map(|_| ())
+        if_set_flags_masked(&*self.name()?, libc::IFF_UP as i16, v).map(|_| ())
     }
 
     fn set_running(&self, v: bool) -> Result<(), Error> {
-        let mut flags = if_flags(&*self.name()?)?;
-        if v {
-            flags |= libc::IFF_RUNNING as i16;
-        } else {
-            flags &= !(libc::IFF_RUNNING as i16);
-        }
-        if_set_flags(&*self.name()?, flags).map(|_| ())
+        if_set_flags_masked(&*self.name()?, libc::IFF_RUNNING as i16, v).map(|_| ())
     }
 }
 
