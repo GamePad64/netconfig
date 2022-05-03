@@ -1,11 +1,12 @@
+mod ifacename;
 pub mod ifreq;
+pub use ifacename::InterfaceName;
 
 use crate::Error;
 use ipnet::IpNet;
 use nix::ifaddrs::getifaddrs;
 use nix::sys::socket::AddressFamily::{Inet, Inet6};
 use nix::sys::socket::{SockaddrIn, SockaddrIn6, SockaddrLike};
-use std::ffi::{CStr, CString};
 use std::net;
 use std::os::unix::io::AsRawFd;
 
@@ -38,22 +39,20 @@ mod ioctls {
 }
 
 pub(crate) fn if_indextoname(index: u32) -> Result<String, Error> {
-    let mut buf = [0i8; libc::IF_NAMESIZE];
-    let ret_buf = unsafe { libc::if_indextoname(index, buf.as_mut_ptr() as _) };
+    let mut buf = InterfaceName::default();
+    let ret_buf = unsafe { libc::if_indextoname(index, buf.as_mut_ptr()) };
 
     if ret_buf.is_null() {
         return Err(Error::InterfaceNotFound);
     }
 
-    match unsafe { CStr::from_ptr(buf.as_ptr()) }.to_str() {
-        Ok(s) => Ok(s.to_string()),
-        Err(_) => Err(Error::UnexpectedMetadata),
-    }
+    String::try_from(&buf).map_err(|_| Error::InvalidParameter)
 }
 
 pub(crate) fn if_nametoindex(name: &str) -> Result<u32, Error> {
-    let cname = CString::new(name).map_err(|_| Error::InvalidParameter)?;
-    match unsafe { libc::if_nametoindex(cname.as_ptr() as _) } {
+    let name = InterfaceName::try_from(name).map_err(|_| Error::InvalidParameter)?;
+
+    match unsafe { libc::if_nametoindex(name.as_ptr()) } {
         0 => Err(Error::InterfaceNotFound),
         n => Ok(n),
     }

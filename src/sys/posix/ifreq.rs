@@ -3,43 +3,12 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
-use std::ffi::CString;
+use super::InterfaceName;
 use std::fmt::Debug;
-use std::iter::zip;
 use std::mem;
-use std::str::FromStr;
-
-#[repr(transparent)]
-#[derive(Copy, Clone, Debug)]
-pub struct InterfaceName(pub [libc::c_char; libc::IFNAMSIZ as _]);
-
-impl FromStr for InterfaceName {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut s = s.to_string();
-        s.truncate(libc::IFNAMSIZ - 1);
-        let name = CString::new(s).unwrap();
-
-        type IfName = [libc::c_char; libc::IFNAMSIZ as _];
-        let mut result = IfName::default();
-        for (x, y) in zip(result.iter_mut(), name.as_bytes_with_nul().iter()) {
-            *x = *y as libc::c_char;
-        }
-        Ok(Self(result))
-    }
-}
-
-impl ToString for InterfaceName {
-    fn to_string(&self) -> String {
-        unsafe { std::ffi::CStr::from_ptr(self.0.as_ptr()) }
-            .to_string_lossy()
-            .to_string()
-    }
-}
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct ifreq {
     pub ifr_ifrn: InterfaceName,
     pub ifr_ifru: ifreq_ifru,
@@ -63,8 +32,14 @@ pub union ifreq_ifru {
     align: [u64; 3usize],
 }
 
+impl Default for ifreq_ifru {
+    fn default() -> Self {
+        unsafe { mem::zeroed() }
+    }
+}
+
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct ifmap {
     pub mem_start: libc::c_ulong,
     pub mem_end: libc::c_ulong,
@@ -94,9 +69,9 @@ pub struct ifaliasreq6 {
 
 impl ifreq {
     pub fn new<T: Into<String>>(name: T) -> Self {
-        let mut req: ifreq = unsafe { mem::zeroed() };
-
-        req.ifr_ifrn = name.into().parse().unwrap();
-        req
+        ifreq {
+            ifr_ifrn: InterfaceName::try_from(&*name.into()).unwrap(),
+            ..Default::default()
+        }
     }
 }
