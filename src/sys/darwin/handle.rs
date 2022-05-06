@@ -2,7 +2,7 @@ use super::scinterface::SCNetworkInterface;
 use super::Metadata;
 use crate::sys::posix::{
     if_add_addr, if_addr, if_flags, if_indextoname, if_mtu, if_nametoindex, if_set_flags,
-    if_set_mtu,
+    if_set_flags_masked, if_set_mtu,
 };
 use crate::sys::InterfaceHandle;
 use crate::{Error, InterfaceHandleCommonT};
