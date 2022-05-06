@@ -29,7 +29,7 @@ ipnetwork = "0.19.0"
 
 [dependencies]
 ipnet = "2.5.0"
-log = "0.4.16"
+log = "0.4.17"
 cfg-if = "1.0.0"
 delegate = "0.6.2"
 thiserror = "1.0.31"
