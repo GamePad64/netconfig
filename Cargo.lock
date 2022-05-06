@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "netconfig"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "cfg-if",
  "core-foundation",
