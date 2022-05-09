@@ -55,10 +55,6 @@ impl InterfaceHandleExt for InterfaceHandle {
 
     fn try_from_guid(guid: GUID) -> Result<crate::InterfaceHandle, Error> {
         let mut luid = NET_LUID_LH::default();
-        unsafe {
-            ConvertInterfaceGuidToLuid(&guid, &mut luid).unwrap();
-        }
-
         let code = unsafe { ConvertInterfaceGuidToLuid(&guid, &mut luid) }
             .map_err(|e| e.win32_error().unwrap());
         match code {
