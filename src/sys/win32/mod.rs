@@ -9,7 +9,6 @@ pub use metadata::MetadataExt;
 
 mod handle;
 mod metadata;
-mod win_convert;
 
 pub(crate) fn list_interfaces() -> Vec<crate::InterfaceHandle> {
     let mut table = std::ptr::null_mut();
