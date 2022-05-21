@@ -1,4 +1,4 @@
-use super::{win_convert, Metadata};
+use super::Metadata;
 use crate::sys::InterfaceHandle;
 use crate::{Error, InterfaceHandleCommonT};
 use ipnet::IpNet;
@@ -6,7 +6,7 @@ use log::warn;
 use std::collections::HashSet;
 use std::io;
 use std::io::ErrorKind;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use widestring::{U16CStr, U16CString};
 use windows::core::{GUID, PCWSTR};
 use windows::Win32::Foundation::{
@@ -21,7 +21,25 @@ use windows::Win32::NetworkManagement::IpHelper::{
     MIB_IPINTERFACE_ROW, MIB_UNICASTIPADDRESS_ROW, NET_LUID_LH,
 };
 use windows::Win32::NetworkManagement::Ndis::NDIS_IF_MAX_STRING_SIZE;
-use windows::Win32::Networking::WinSock::{AF_INET, AF_INET6, AF_UNSPEC};
+use windows::Win32::Networking::WinSock::{
+    ADDRESS_FAMILY, AF_INET, AF_INET6, AF_UNSPEC, SOCKADDR_INET,
+};
+
+fn convert_sockaddr(sa: SOCKADDR_INET) -> SocketAddr {
+    unsafe {
+        match ADDRESS_FAMILY(sa.si_family as _) {
+            AF_INET => SocketAddr::new(
+                Ipv4Addr::from(sa.Ipv4.sin_addr).into(),
+                u16::from_be(sa.Ipv4.sin_port),
+            ),
+            AF_INET6 => SocketAddr::new(
+                Ipv6Addr::from(sa.Ipv6.sin6_addr).into(),
+                u16::from_be(sa.Ipv6.sin6_port),
+            ),
+            _ => panic!("Invalid address family"),
+        }
+    }
+}
 
 impl InterfaceHandle {
     fn luid(&self) -> Result<NET_LUID_LH, Error> {
@@ -142,7 +160,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         unsafe { InitializeUnicastIpAddressEntry(&mut row as _) };
 
         row.InterfaceIndex = self.index;
-        row.Address = win_convert::xSocketAddr(SocketAddr::new(network.addr(), 0)).into();
+        row.Address = SocketAddr::new(network.addr(), 0).into();
         row.OnLinkPrefixLength = network.prefix_len();
 
         unsafe {
@@ -155,7 +173,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         unsafe { InitializeUnicastIpAddressEntry(&mut row as _) };
 
         row.InterfaceIndex = self.index;
-        row.Address = win_convert::xSocketAddr(SocketAddr::new(network.addr(), 0)).into();
+        row.Address = SocketAddr::new(network.addr(), 0).into();
         row.OnLinkPrefixLength = network.prefix_len();
 
         unsafe {
@@ -181,14 +199,14 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         unsafe {
             for i in 0..(*(*table)).NumEntries as _ {
                 let row = &(*(*table)).Table.get_unchecked(i);
-                let sockaddr = win_convert::xSocketAddr::from(row.Address);
+                let sockaddr = convert_sockaddr(row.Address);
 
                 if row.InterfaceIndex != self.index {
                     continue;
                 }
 
                 addresses_set.insert(
-                    IpNet::new(sockaddr.0.ip(), row.OnLinkPrefixLength)
+                    IpNet::new(sockaddr.ip(), row.OnLinkPrefixLength)
                         .map_err(|_| Error::UnexpectedMetadata)?,
                 );
             }
