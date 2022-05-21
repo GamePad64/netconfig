@@ -48,7 +48,7 @@ impl InterfaceHandleExt for InterfaceHandle {
         let code = unsafe { ConvertInterfaceLuidToIndex(&luid, &mut index) }
             .map_err(|e| e.win32_error().unwrap());
         match code {
-            Ok(_) => Ok(crate::InterfaceHandle(InterfaceHandle { index })),
+            Ok(_) => Ok(crate::InterfaceHandle::from_index_unchecked(index)),
             _ => Err(Error::InternalError),
         }
     }
@@ -70,7 +70,7 @@ impl InterfaceHandleExt for InterfaceHandle {
         let code = unsafe { ConvertInterfaceNameToLuidW(PCWSTR(walias.as_ptr() as _), &mut luid) }
             .map_err(|e| e.win32_error().unwrap());
         match code {
-            Ok(_) => Ok(InterfaceHandle::try_from_luid(luid)?),
+            Ok(_) => Self::try_from_luid(luid),
             Err(ERROR_INVALID_NAME) => Err(Error::InterfaceNotFound),
             Err(ERROR_INVALID_PARAMETER) => Err(Error::InvalidParameter),
             _ => Err(Error::InternalError),
