@@ -126,9 +126,10 @@ pub(crate) fn if_add_addr(name: &str, addr: IpNet) -> Result<(), Error> {
                 ifra_mask: *ifra_mask.as_ref(),
             };
 
-            Ok(unsafe {
+            unsafe {
                 ioctls::siocaifaddr4(socket.as_raw_fd(), &req)?;
-            })
+            }
+            Ok(())
         }
         IpNet::V6(addr6) => {
             let ifra_addr = SockaddrIn6::from(net::SocketAddrV6::new(addr6.addr(), 0, 0, 0));
@@ -143,9 +144,10 @@ pub(crate) fn if_add_addr(name: &str, addr: IpNet) -> Result<(), Error> {
                 ifra_mask: *ifra_mask.as_ref(),
             };
 
-            Ok(unsafe {
+            unsafe {
                 ioctls::siocaifaddr6(socket.as_raw_fd(), &req)?;
-            })
+            }
+            Ok(())
         }
     }
 }
@@ -173,7 +175,7 @@ pub(crate) fn if_addr(interface_name: &str) -> Result<Vec<IpNet>, Error> {
                         .unwrap();
                 IpNet::new(addr.into(), prefix).unwrap()
             } else {
-                return Err(Error::Unknown("Address family is invalid".into()));
+                return Err(Error::UnexpectedMetadata);
             };
 
             result.push(network);
