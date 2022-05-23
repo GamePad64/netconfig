@@ -26,12 +26,14 @@ use windows::Win32::Networking::WinSock::{AF_INET, AF_INET6, AF_UNSPEC};
 impl InterfaceHandle {
     fn luid(&self) -> Result<NET_LUID_LH, Error> {
         let mut luid = NET_LUID_LH::default();
-        let code = unsafe { ConvertInterfaceIndexToLuid(self.index, &mut luid) }
-            .map_err(|e| e.win32_error().unwrap());
+
+        let code = unsafe { ConvertInterfaceIndexToLuid(self.index, &mut luid) };
         match code {
             Ok(_) => Ok(luid),
-            Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
-            _ => Err(Error::InternalError),
+            Err(e) => match e.win32_error().unwrap() {
+                ERROR_FILE_NOT_FOUND => Err(Error::InterfaceNotFound),
+                _ => Err(e.into()),
+            },
         }
     }
 }
@@ -45,21 +47,19 @@ pub trait InterfaceHandleExt {
 impl InterfaceHandleExt for InterfaceHandle {
     fn try_from_luid(luid: NET_LUID_LH) -> Result<crate::InterfaceHandle, Error> {
         let mut index = 0;
-        let code = unsafe { ConvertInterfaceLuidToIndex(&luid, &mut index) }
-            .map_err(|e| e.win32_error().unwrap());
+        let code = unsafe { ConvertInterfaceLuidToIndex(&luid, &mut index) };
         match code {
             Ok(_) => Ok(crate::InterfaceHandle::from_index_unchecked(index)),
-            _ => Err(Error::InternalError),
+            Err(e) => Err(e.into()),
         }
     }
 
     fn try_from_guid(guid: GUID) -> Result<crate::InterfaceHandle, Error> {
         let mut luid = NET_LUID_LH::default();
-        let code = unsafe { ConvertInterfaceGuidToLuid(&guid, &mut luid) }
-            .map_err(|e| e.win32_error().unwrap());
+        let code = unsafe { ConvertInterfaceGuidToLuid(&guid, &mut luid) };
         match code {
             Ok(_) => Self::try_from_luid(luid),
-            _ => Err(Error::InternalError),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -67,13 +67,14 @@ impl InterfaceHandleExt for InterfaceHandle {
         let walias = U16CString::from_str(alias).map_err(|_| Error::InvalidParameter)?;
 
         let mut luid = NET_LUID_LH::default();
-        let code = unsafe { ConvertInterfaceNameToLuidW(PCWSTR(walias.as_ptr() as _), &mut luid) }
-            .map_err(|e| e.win32_error().unwrap());
+        let code = unsafe { ConvertInterfaceNameToLuidW(PCWSTR(walias.as_ptr() as _), &mut luid) };
         match code {
             Ok(_) => Self::try_from_luid(luid),
-            Err(ERROR_INVALID_NAME) => Err(Error::InterfaceNotFound),
-            Err(ERROR_INVALID_PARAMETER) => Err(Error::InvalidParameter),
-            _ => Err(Error::InternalError),
+            Err(e) => match e.win32_error().unwrap() {
+                ERROR_INVALID_NAME => Err(Error::InterfaceNotFound),
+                ERROR_INVALID_PARAMETER => Err(Error::InvalidParameter),
+                _ => Err(e.into()),
+            },
         }
     }
 }
@@ -166,8 +167,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
     fn get_addresses(&self) -> Result<Vec<IpNet>, Error> {
         let mut table = std::ptr::null_mut();
 
-        unsafe { GetUnicastIpAddressTable(AF_UNSPEC.0 as _, &mut table) }
-            .map_err(|_| Error::InternalError)?;
+        unsafe { GetUnicastIpAddressTable(AF_UNSPEC.0 as _, &mut table) }.map_err(Error::from)?;
         let table = scopeguard::guard(table, |table| {
             if !table.is_null() {
                 unsafe {
@@ -205,29 +205,31 @@ impl InterfaceHandleCommonT for InterfaceHandle {
                 ..Default::default()
             };
 
-            match unsafe { GetIpInterfaceEntry(&mut row).map_err(|e| e.win32_error().unwrap()) } {
+            match unsafe { GetIpInterfaceEntry(&mut row) } {
                 Ok(_) => Ok(()),
-                Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
-                Err(ERROR_NOT_FOUND) => {
-                    warn!("Interface not found with family: {:?}", family);
-                    continue;
-                }
-                _ => Err(Error::InternalError),
+                Err(e) => match e.win32_error().unwrap() {
+                    ERROR_FILE_NOT_FOUND => Err(Error::InterfaceNotFound),
+                    ERROR_NOT_FOUND => {
+                        warn!("Interface not found with family: {:?}", family);
+                        continue;
+                    }
+                    _ => Err(e.into()),
+                },
             }?;
 
             row.NlMtu = mtu;
 
-            match unsafe { SetIpInterfaceEntry(&mut row).map_err(|e| e.win32_error().unwrap()) } {
+            match unsafe { SetIpInterfaceEntry(&mut row) } {
                 Ok(_) => Ok(()),
-                Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
-                Err(ERROR_NOT_FOUND) => {
-                    warn!("Interface not found with family: {:?}", family);
-                    continue;
-                }
-                Err(ERROR_ACCESS_DENIED) => {
-                    Err(io::Error::from(ErrorKind::PermissionDenied).into())
-                }
-                Err(_) => Err(Error::InternalError),
+                Err(e) => match e.win32_error().unwrap() {
+                    ERROR_FILE_NOT_FOUND => Err(Error::InterfaceNotFound),
+                    ERROR_NOT_FOUND => {
+                        warn!("Interface not found with family: {:?}", family);
+                        continue;
+                    }
+                    ERROR_ACCESS_DENIED => Err(io::Error::from(ErrorKind::PermissionDenied).into()),
+                    _ => Err(e.into()),
+                },
             }?;
         }
         Ok(())
@@ -235,12 +237,13 @@ impl InterfaceHandleCommonT for InterfaceHandle {
 
     fn try_from_index(index: u32) -> Result<crate::InterfaceHandle, Error> {
         let mut luid = NET_LUID_LH::default();
-        let code = unsafe { ConvertInterfaceIndexToLuid(index, &mut luid) }
-            .map_err(|e| e.win32_error().unwrap());
+        let code = unsafe { ConvertInterfaceIndexToLuid(index, &mut luid) };
         match code {
             Ok(_) => Ok(crate::InterfaceHandle::from_index_unchecked(index)),
-            Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
-            _ => Err(Error::InternalError),
+            Err(e) => match e.win32_error().unwrap() {
+                ERROR_FILE_NOT_FOUND => Err(Error::InterfaceNotFound),
+                _ => Err(e.into()),
+            },
         }
     }
 
@@ -248,12 +251,13 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         let wname = U16CString::from_str(name).map_err(|_| Error::InvalidParameter)?;
 
         let mut luid = NET_LUID_LH::default();
-        let code = unsafe { ConvertInterfaceNameToLuidW(PCWSTR(wname.as_ptr() as _), &mut luid) }
-            .map_err(|e| e.win32_error().unwrap());
+        let code = unsafe { ConvertInterfaceNameToLuidW(PCWSTR(wname.as_ptr() as _), &mut luid) };
         match code {
-            Ok(_) => Ok(InterfaceHandle::try_from_luid(luid)?),
-            Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
-            _ => Err(Error::InternalError),
+            Ok(_) => InterfaceHandle::try_from_luid(luid),
+            Err(e) => match e.win32_error().unwrap() {
+                ERROR_FILE_NOT_FOUND => Err(Error::InterfaceNotFound),
+                _ => Err(e.into()),
+            },
         }
     }
 }

@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::io;
 use thiserror::Error as ThisError;
 
@@ -10,7 +11,7 @@ pub enum Error {
     #[error("interface not found")]
     InterfaceNotFound,
     #[error("unknown error: {0}")]
-    Unknown(String),
+    Unknown(Box<dyn StdError>),
     #[error("I/O error: {0}")]
     Io(io::Error),
 }
@@ -18,7 +19,14 @@ pub enum Error {
 #[cfg(not(target_os = "windows"))]
 impl From<nix::Error> for Error {
     fn from(e: nix::Error) -> Self {
-        Error::Unknown(format!("{e:?}"))
+        Error::Unknown(Box::new(e))
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl From<windows::core::Error> for Error {
+    fn from(e: windows::core::Error) -> Self {
+        Error::Unknown(Box::new(e))
     }
 }
 
