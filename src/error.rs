@@ -9,16 +9,16 @@ pub enum Error {
     UnexpectedMetadata,
     #[error("interface not found")]
     InterfaceNotFound,
-    #[error("unknown internal error")]
-    InternalError,
+    #[error("unknown error: {0}")]
+    Unknown(String),
     #[error("I/O error: {0}")]
     Io(io::Error),
 }
 
 #[cfg(not(target_os = "windows"))]
 impl From<nix::Error> for Error {
-    fn from(_: nix::Error) -> Self {
-        Error::InternalError
+    fn from(e: nix::Error) -> Self {
+        Error::Unknown(format!("{e:?}"))
     }
 }
 

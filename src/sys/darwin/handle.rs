@@ -1,7 +1,7 @@
 use super::scinterface::SCNetworkInterface;
 use super::Metadata;
 use crate::sys::posix::{
-    if_add_addr, if_addr, if_flags, if_indextoname, if_mtu, if_nametoindex, if_set_flags,
+    if_add_addr, if_addr, if_indextoname, if_mtu, if_nametoindex, if_set_flags,
     if_set_flags_masked, if_set_mtu,
 };
 use crate::sys::InterfaceHandle;
@@ -12,6 +12,7 @@ use ipnet::IpNet;
 pub trait InterfaceHandleExt {
     fn set_up(&self, v: bool) -> Result<(), Error>;
     fn set_running(&self, v: bool) -> Result<(), Error>;
+    fn set_flags(&self, flags: i16) -> Result<(), Error>;
 }
 
 impl InterfaceHandleExt for crate::InterfaceHandle {
@@ -19,6 +20,7 @@ impl InterfaceHandleExt for crate::InterfaceHandle {
         to self.0 {
             fn set_up(&self, v: bool) -> Result<(), Error>;
             fn set_running(&self, v: bool) -> Result<(), Error>;
+            fn set_flags(&self, flags: i16) -> Result<(), Error> ;
         }
     }
 }
@@ -36,7 +38,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
             handle: crate::InterfaceHandle(*self),
             index: self.index,
             name: name.clone(),
-            alias: SCNetworkInterface::get_displayname(&*name).unwrap_or_else(|| name.clone()),
+            alias: SCNetworkInterface::get_displayname(&name).unwrap_or_else(|| name.clone()),
             mtu: if_mtu(&*name)?,
             ..Default::default()
         };
@@ -76,5 +78,9 @@ impl InterfaceHandleExt for InterfaceHandle {
 
     fn set_running(&self, v: bool) -> Result<(), Error> {
         if_set_flags_masked(&*self.name()?, libc::IFF_RUNNING as i16, v).map(|_| ())
+    }
+
+    fn set_flags(&self, flags: i16) -> Result<(), Error> {
+        if_set_flags(&self.name()?, flags as _).map(|_| ())
     }
 }

@@ -1,5 +1,4 @@
 use core_foundation::impl_TCFType;
-
 use core_foundation::{array::CFArray, base::TCFType, string::CFString};
 use system_configuration_sys::network_configuration::{
     SCNetworkInterfaceCopyAll, SCNetworkInterfaceGetBSDName,
@@ -33,7 +32,7 @@ impl SCNetworkInterface {
         Self::get_by_name(name)?.displayname()
     }
 
-    fn name(&self) -> Option<String> {
+    pub(crate) fn name(&self) -> Option<String> {
         let ptr = unsafe { SCNetworkInterfaceGetBSDName(self.0) };
         if ptr.is_null() {
             None
@@ -42,7 +41,7 @@ impl SCNetworkInterface {
         }
     }
 
-    fn displayname(&self) -> Option<String> {
+    pub(crate) fn displayname(&self) -> Option<String> {
         let ptr = unsafe { SCNetworkInterfaceGetLocalizedDisplayName(self.0) };
         if ptr.is_null() {
             None

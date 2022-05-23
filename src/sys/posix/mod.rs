@@ -173,7 +173,7 @@ pub(crate) fn if_addr(interface_name: &str) -> Result<Vec<IpNet>, Error> {
                         .unwrap();
                 IpNet::new(addr.into(), prefix).unwrap()
             } else {
-                return Err(Error::InternalError);
+                return Err(Error::Unknown("Address family is invalid".into()));
             };
 
             result.push(network);
