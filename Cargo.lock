@@ -476,9 +476,9 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "widestring"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5babd2d3fcd28bcf9712ef93e437684156f5c46173a9718829aa57aa4aa37a8"
+checksum = "a5ebb1abbff1aa611839e14864856c9fc67d3af74593e3cb79f3d56ffdf9e443"
 
 [[package]]
 name = "winapi"
