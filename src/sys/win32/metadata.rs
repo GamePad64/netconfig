@@ -1,21 +1,19 @@
 use crate::MetadataCommonT;
-use windows::core::GUID;
-use windows::Win32::NetworkManagement::Ndis::NET_LUID_LH;
 
 pub trait MetadataExt {
-    fn luid(&self) -> NET_LUID_LH;
-    fn guid(&self) -> GUID;
+    fn luid(&self) -> u64;
+    fn guid(&self) -> u128;
     fn index(&self) -> u32;
     fn alias(&self) -> String;
     fn description(&self) -> String;
 }
 
 impl MetadataExt for crate::Metadata {
-    fn luid(&self) -> NET_LUID_LH {
+    fn luid(&self) -> u64 {
         self.0.luid
     }
 
-    fn guid(&self) -> GUID {
+    fn guid(&self) -> u128 {
         self.0.guid
     }
 
@@ -36,8 +34,8 @@ impl MetadataExt for crate::Metadata {
 pub(crate) struct Metadata {
     pub(crate) handle: crate::InterfaceHandle,
 
-    pub(crate) luid: NET_LUID_LH,
-    pub(crate) guid: GUID,
+    pub(crate) luid: u64,
+    pub(crate) guid: u128,
     pub(crate) index: u32,
     pub(crate) mtu: u32,
     pub(crate) name: String,

@@ -51,7 +51,7 @@ fn main() {
                 cfg_if::cfg_if! {
                     if #[cfg(target_os = "windows")] {
                         println!("GUID: {:?}", metadata.guid());
-                        println!("LUID: {:?}", unsafe { metadata.luid().Value });
+                        println!("LUID: {:?}", metadata.luid());
                     }
                 }
                 println!("MTU: {}", metadata.mtu());
