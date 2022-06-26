@@ -1,6 +1,6 @@
 use crate::MetadataCommonT;
 use windows::core::GUID;
-use windows::Win32::NetworkManagement::IpHelper::NET_LUID_LH;
+use windows::Win32::NetworkManagement::Ndis::NET_LUID_LH;
 
 pub trait MetadataExt {
     fn luid(&self) -> NET_LUID_LH;
