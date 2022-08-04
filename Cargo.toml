@@ -24,7 +24,7 @@ core-foundation = "0.9.3"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.24.1"
-libc = "0.2.126"
+libc = "0.2.127"
 ipnetwork = "0.19.0"
 
 [dependencies]
