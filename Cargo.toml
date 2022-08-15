@@ -23,7 +23,7 @@ system-configuration-sys = "0.5.0"
 core-foundation = "0.9.3"
 
 [target.'cfg(unix)'.dependencies]
-nix = "0.24.1"
+nix = "0.25.0"
 libc = "0.2.126"
 ipnetwork = "0.19.0"
 
