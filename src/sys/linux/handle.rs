@@ -1,7 +1,7 @@
 use super::Metadata;
 use crate::sys::posix::{
     if_addr, if_flags, if_indextoname, if_nametoindex, if_set_flags, if_set_flags_masked,
-    if_set_mtu,
+    if_set_hwaddress, if_set_mtu,
 };
 use crate::sys::InterfaceHandle;
 use crate::{Error, InterfaceHandleCommonT};
@@ -23,6 +23,7 @@ use std::net::IpAddr;
 pub trait InterfaceHandleExt {
     fn set_up(&self, v: bool) -> Result<(), Error>;
     fn set_running(&self, v: bool) -> Result<(), Error>;
+    fn set_hwaddress(&self, hwaddress: [u8; 6]) -> Result<(), Error>;
 }
 
 impl InterfaceHandleExt for crate::InterfaceHandle {
@@ -30,6 +31,7 @@ impl InterfaceHandleExt for crate::InterfaceHandle {
         to self.0 {
             fn set_up(&self, v: bool) -> Result<(), Error>;
             fn set_running(&self, v: bool) -> Result<(), Error>;
+            fn set_hwaddress(&self, hwaddress: [u8; 6]) -> Result<(), Error>;
         }
     }
 }
@@ -192,6 +194,10 @@ impl InterfaceHandleExt for InterfaceHandle {
 
     fn set_running(&self, v: bool) -> Result<(), Error> {
         if_set_flags_masked(&*self.name()?, libc::IFF_RUNNING as i16, v).map(|_| ())
+    }
+
+    fn set_hwaddress(&self, hwaddress: [u8; 6]) -> Result<(), Error> {
+        if_set_hwaddress(&self.name()?, hwaddress)
     }
 }
 

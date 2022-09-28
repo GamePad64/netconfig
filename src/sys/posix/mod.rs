@@ -4,6 +4,7 @@ pub use ifacename::InterfaceName;
 
 use crate::Error;
 use ipnet::IpNet;
+use libc::ARPHRD_ETHER;
 use nix::ifaddrs::getifaddrs;
 use nix::sys::socket::AddressFamily::{Inet, Inet6};
 use nix::sys::socket::{SockaddrIn, SockaddrIn6, SockaddrLike};
@@ -19,6 +20,7 @@ mod ioctls {
             nix::ioctl_write_ptr_bad!(siocsifdstaddr, libc::SIOCSIFDSTADDR, super::ifreq::ifreq);
             nix::ioctl_write_ptr_bad!(siocsifbrdaddr, libc::SIOCSIFBRDADDR, super::ifreq::ifreq);
             nix::ioctl_write_ptr_bad!(siocsifnetmask, libc::SIOCSIFNETMASK, super::ifreq::ifreq);
+            nix::ioctl_write_ptr_bad!(siocsifhwaddr, libc::SIOCSIFHWADDR, super::ifreq::ifreq);
 
             nix::ioctl_read_bad!(siocgifmtu, libc::SIOCGIFMTU, super::ifreq::ifreq);
             nix::ioctl_read_bad!(siocgifflags, libc::SIOCGIFFLAGS, super::ifreq::ifreq);
@@ -74,6 +76,24 @@ pub(crate) fn if_set_mtu(name: &str, mtu: u32) -> Result<(), Error> {
     let socket = make_dummy_socket();
 
     unsafe { ioctls::siocsifmtu(socket.as_raw_fd(), &req) }?;
+    Ok(())
+}
+
+pub(crate) fn if_set_hwaddress(name: &str, hwaddress: [u8; 6]) -> Result<(), Error> {
+    let mut req = ifreq::ifreq::new(name);
+    req.ifr_ifru.ifru_hwaddr = libc::sockaddr {
+        sa_family: ARPHRD_ETHER,
+        sa_data: unsafe { std::mem::zeroed() },
+    };
+    for i in 0..6 {
+        unsafe {
+            req.ifr_ifru.ifru_hwaddr.sa_data[i] = hwaddress[i] as libc::c_char;
+        }
+    }
+
+    let socket = make_dummy_socket();
+
+    unsafe { ioctls::siocsifhwaddr(socket.as_raw_fd(), &req) }?;
     Ok(())
 }
 
