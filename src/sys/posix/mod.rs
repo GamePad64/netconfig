@@ -76,7 +76,7 @@ pub(crate) fn if_set_mtu(name: &str, mtu: u32) -> Result<(), Error> {
     let mut req = ifreq::ifreq::new(name);
     req.ifr_ifru.ifru_mtu = mtu as libc::c_int;
 
-    let socket = make_dummy_socket();
+    let socket = make_dummy_socket()?;
 
     unsafe { ioctls::siocsifmtu(socket.as_raw_fd(), &req) }?;
     Ok(())
@@ -94,7 +94,7 @@ pub(crate) fn if_set_hwaddress(name: &str, hwaddress: [u8; 6]) -> Result<(), Err
         req.ifr_ifru.ifru_hwaddr.sa_data[0..6].copy_from_slice(&hwaddress);
     }
 
-    let socket = make_dummy_socket();
+    let socket = make_dummy_socket()?;
 
     unsafe { ioctls::siocsifhwaddr(socket.as_raw_fd(), &req) }?;
     Ok(())
@@ -103,7 +103,7 @@ pub(crate) fn if_set_hwaddress(name: &str, hwaddress: [u8; 6]) -> Result<(), Err
 pub(crate) fn if_flags(name: &str) -> Result<i16, Error> {
     let mut req = ifreq::ifreq::new(name);
 
-    let socket = make_dummy_socket();
+    let socket = make_dummy_socket()?;
 
     unsafe {
         ioctls::siocgifflags(socket.as_raw_fd(), &mut req)?;
@@ -115,7 +115,7 @@ pub(crate) fn if_set_flags(name: &str, flags: i16) -> Result<i16, Error> {
     let mut req = ifreq::ifreq::new(name);
     req.ifr_ifru.ifru_flags = flags;
 
-    let socket = make_dummy_socket();
+    let socket = make_dummy_socket()?;
 
     unsafe {
         ioctls::siocsifflags(socket.as_raw_fd(), &req)?;
@@ -207,6 +207,6 @@ pub(crate) fn if_addr(interface_name: &str) -> Result<Vec<IpNet>, Error> {
     Ok(result)
 }
 
-pub(crate) fn make_dummy_socket() -> net::UdpSocket {
-    net::UdpSocket::bind("[::1]:0").expect("Socket is bound")
+fn make_dummy_socket() -> Result<net::UdpSocket, Error> {
+    Ok(net::UdpSocket::bind("[::1]:0")?)
 }
