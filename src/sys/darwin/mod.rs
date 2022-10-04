@@ -7,17 +7,9 @@ mod metadata;
 pub(crate) mod scinterface;
 
 pub(crate) fn list_interfaces() -> Vec<crate::InterfaceHandle> {
-    let names: Vec<String> = nix::ifaddrs::getifaddrs()
+    nix::net::if_::if_nameindex()
         .unwrap()
-        .map(|addr| addr.interface_name)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    let mut result = vec![];
-    for name in names {
-        result.push(crate::InterfaceHandle::try_from_name(&*name).unwrap())
-    }
-
-    result
+        .iter()
+        .map(|a| crate::InterfaceHandle::from_index_unchecked(a.index()))
+        .collect()
 }

@@ -7,7 +7,9 @@ use ipnet::IpNet;
 use libc::ARPHRD_ETHER;
 use nix::ifaddrs::getifaddrs;
 use nix::sys::socket::AddressFamily::{Inet, Inet6};
-use nix::sys::socket::{SockaddrIn, SockaddrIn6, SockaddrLike};
+use nix::sys::socket::SockaddrLike;
+#[cfg(target_os = "macos")]
+use nix::sys::socket::{SockaddrIn, SockaddrIn6};
 use std::net;
 use std::os::unix::io::AsRawFd;
 
@@ -60,6 +62,7 @@ pub(crate) fn if_nametoindex(name: &str) -> Result<u32, Error> {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn if_mtu(name: &str) -> Result<u32, Error> {
     let mut req = ifreq::ifreq::new(name);
 
@@ -85,10 +88,10 @@ pub(crate) fn if_set_hwaddress(name: &str, hwaddress: [u8; 6]) -> Result<(), Err
         sa_family: ARPHRD_ETHER,
         sa_data: unsafe { std::mem::zeroed() },
     };
-    for i in 0..6 {
-        unsafe {
-            req.ifr_ifru.ifru_hwaddr.sa_data[i] = hwaddress[i] as libc::c_char;
-        }
+
+    let hwaddress = hwaddress.map(|i| i as libc::c_char);
+    unsafe {
+        req.ifr_ifru.ifru_hwaddr.sa_data[0..6].copy_from_slice(&hwaddress);
     }
 
     let socket = make_dummy_socket();
