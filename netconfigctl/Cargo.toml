@@ -12,4 +12,4 @@ rust-version.workspace = true
 netconfig = { version = "0.2.0", path = ".."}
 env_logger = "0.9.1"
 cfg-if = "1.0.0"
-clap = { version = "4.0.9", features = ["derive"] }
+clap = { version = "4.0.10", features = ["derive"] }

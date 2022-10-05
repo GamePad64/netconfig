@@ -1,19 +1,15 @@
 use windows::Win32::NetworkManagement::IpHelper::{FreeMibTable, GetIpInterfaceTable};
 use windows::Win32::Networking::WinSock::AF_UNSPEC;
 
-use crate::sys::InterfaceHandle;
-use crate::InterfaceHandleCommonT;
-pub use handle::InterfaceHandleExt;
-pub(crate) use metadata::Metadata;
-pub use metadata::MetadataExt;
+use crate::{Error, Interface};
+pub use handle::InterfaceExt;
 
 mod handle;
-mod metadata;
 
-pub(crate) fn list_interfaces() -> Vec<crate::InterfaceHandle> {
+pub(crate) fn list_interfaces() -> Result<Vec<Interface>, Error> {
     let mut table = std::ptr::null_mut();
 
-    let result = unsafe { GetIpInterfaceTable(AF_UNSPEC.0 as _, &mut table) };
+    unsafe { GetIpInterfaceTable(AF_UNSPEC.0 as _, &mut table)? };
     let table = scopeguard::guard(table, |table| {
         if !table.is_null() {
             unsafe {
@@ -22,17 +18,12 @@ pub(crate) fn list_interfaces() -> Vec<crate::InterfaceHandle> {
         }
     });
 
-    unsafe {
-        if result.is_ok() {
-            let mut result = Vec::with_capacity((*(*table)).NumEntries as _);
-            for i in 0..(*(*table)).NumEntries as _ {
-                let row = &(*(*table)).Table.get_unchecked(i);
-                let handle = InterfaceHandle::try_from_index(row.InterfaceIndex).unwrap();
-                result.push(handle);
-            }
-            result
-        } else {
-            vec![]
-        }
-    }
+    let rows = unsafe {
+        let table = table.as_ref().unwrap();
+        std::slice::from_raw_parts(table.Table.as_ptr(), table.NumEntries as _)
+    };
+
+    rows.iter()
+        .map(|row| Interface::try_from_index(row.InterfaceIndex))
+        .collect()
 }

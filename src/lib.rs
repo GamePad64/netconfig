@@ -1,3 +1,5 @@
+extern crate core;
+
 mod error;
 mod traits;
 use delegate::delegate;
@@ -5,7 +7,7 @@ pub use error::Error;
 pub use ipnet;
 use ipnet::IpNet;
 use std::collections::HashSet;
-use traits::{InterfaceHandleCommonT, MetadataCommonT};
+use traits::InterfaceHandleCommonT;
 pub mod sys;
 
 /// Wrapped interface index.
@@ -13,28 +15,19 @@ pub mod sys;
 /// Index is chosen, because basically all operating systems use index as an identifier.
 /// This struct can be used to manipulate interface parameters, such as IP address and MTU.
 #[derive(Default, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct InterfaceHandle(sys::InterfaceHandle);
-pub struct Metadata(sys::Metadata);
+pub struct Interface(sys::InterfaceHandle);
 
-impl Metadata {
+impl Interface {
     delegate! {
         to self.0 {
-            pub fn name(&self) -> String;
-            pub fn handle(&self) -> InterfaceHandle;
-            pub fn mtu(&self) -> u32;
-            pub fn index(&self) -> u32;
-        }
-    }
-}
-
-impl InterfaceHandle {
-    delegate! {
-        to self.0 {
-            pub fn metadata(&self) -> Result<Metadata, Error>;
-            pub fn add_ip(&self, network: IpNet);
-            pub fn remove_ip(&self, network: IpNet);
-            pub fn get_addresses(&self) -> Result<Vec<IpNet>, Error>;
+            pub fn add_address(&self, network: IpNet) -> Result<(), Error>;
+            pub fn remove_address(&self, network: IpNet) -> Result<(), Error>;
+            pub fn addresses(&self) -> Result<Vec<IpNet>, Error>;
             pub fn set_mtu(&self, mtu: u32) -> Result<(), Error>;
+
+            pub fn name(&self) -> Result<String, Error>;
+            pub fn mtu(&self) -> Result<u32, Error>;
+            pub fn index(&self) -> Result<u32, Error>;
         }
     }
 
@@ -59,20 +52,20 @@ impl InterfaceHandle {
     }
 }
 
-pub fn list_interfaces() -> Vec<crate::InterfaceHandle> {
+pub fn list_interfaces() -> Result<Vec<Interface>, Error> {
     sys::list_interfaces()
 }
 
-pub fn list_addresses() -> Vec<IpNet> {
-    let interfaces = list_interfaces();
+pub fn list_addresses() -> Result<Vec<IpNet>, Error> {
+    let interfaces = list_interfaces()?;
 
     let addresses = interfaces
         .iter()
-        .flat_map(|iface| iface.get_addresses())
+        .flat_map(|iface| iface.addresses())
         .flatten();
 
-    HashSet::<IpNet>::from_iter(addresses)
+    Ok(HashSet::<IpNet>::from_iter(addresses)
         .iter()
         .cloned()
-        .collect()
+        .collect())
 }

@@ -1,20 +1,19 @@
-use super::Metadata;
 use crate::sys::InterfaceHandle;
-use crate::{Error, InterfaceHandleCommonT};
+use crate::{Error, Interface, InterfaceHandleCommonT};
 use ipnet::IpNet;
 use log::warn;
 use std::collections::HashSet;
-use std::io;
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-use widestring::{U16CStr, U16CString};
-use windows::core::{Error as WinError, GUID, HRESULT};
+use widestring::U16CString;
+use windows::core::{Error as WinError, GUID, HRESULT, HSTRING};
 use windows::Win32::NetworkManagement::IpHelper::{
-    ConvertInterfaceGuidToLuid, ConvertInterfaceIndexToLuid, ConvertInterfaceLuidToIndex,
-    ConvertInterfaceLuidToNameW, ConvertInterfaceNameToLuidW, CreateUnicastIpAddressEntry,
-    DeleteUnicastIpAddressEntry, FreeMibTable, GetIfEntry2, GetIpInterfaceEntry,
-    GetUnicastIpAddressTable, InitializeUnicastIpAddressEntry, SetIpInterfaceEntry, MIB_IF_ROW2,
-    MIB_IPINTERFACE_ROW, MIB_UNICASTIPADDRESS_ROW,
+    ConvertInterfaceGuidToLuid, ConvertInterfaceIndexToLuid, ConvertInterfaceLuidToAlias,
+    ConvertInterfaceLuidToGuid, ConvertInterfaceLuidToIndex, ConvertInterfaceLuidToNameW,
+    ConvertInterfaceNameToLuidW, CreateUnicastIpAddressEntry, DeleteUnicastIpAddressEntry,
+    FreeMibTable, GetIfEntry2, GetIpInterfaceEntry, GetUnicastIpAddressTable,
+    InitializeUnicastIpAddressEntry, SetIpInterfaceEntry, MIB_IF_ROW2, MIB_IPINTERFACE_ROW,
+    MIB_UNICASTIPADDRESS_ROW,
 };
 use windows::Win32::NetworkManagement::Ndis::{IF_MAX_STRING_SIZE, NET_LUID_LH};
 use windows::Win32::Networking::WinSock::{
@@ -55,31 +54,55 @@ impl InterfaceHandle {
             Err(e) => Err(WinError::from(e).into()),
         }
     }
+
+    fn mib_if_row2(&self) -> Result<MIB_IF_ROW2, Error> {
+        let mut row = MIB_IF_ROW2 {
+            InterfaceIndex: self.index,
+            ..Default::default()
+        };
+        unsafe {
+            GetIfEntry2(&mut row).map_err(|_| Error::InterfaceNotFound)?;
+        }
+        Ok(row)
+    }
+
+    fn net_luid_lh(&self) -> Result<NET_LUID_LH, Error> {
+        Ok(NET_LUID_LH {
+            Value: self.luid()?,
+        })
+    }
 }
 
-pub trait InterfaceHandleExt {
-    fn try_from_luid(luid: u64) -> Result<crate::InterfaceHandle, Error>;
-    fn try_from_guid(guid: u128) -> Result<crate::InterfaceHandle, Error>;
-    fn try_from_alias(alias: &str) -> Result<crate::InterfaceHandle, Error>;
+pub trait InterfaceExt {
+    fn try_from_luid(luid: u64) -> Result<Interface, Error>;
+    fn try_from_guid(guid: u128) -> Result<Interface, Error>;
+    fn try_from_alias(alias: &str) -> Result<Interface, Error>;
+
+    fn luid(&self) -> Result<u64, Error>;
+    fn guid(&self) -> Result<u128, Error>;
+    fn index(&self) -> Result<u32, Error>;
+    fn alias(&self) -> Result<String, Error>;
+    fn description(&self) -> Result<String, Error>;
 }
 
-impl InterfaceHandleExt for InterfaceHandle {
-    fn try_from_luid(luid: u64) -> Result<crate::InterfaceHandle, Error> {
+impl InterfaceExt for Interface {
+    fn try_from_luid(luid: u64) -> Result<Interface, Error> {
         let luid = NET_LUID_LH { Value: luid };
         let mut index = 0;
         unsafe { ConvertInterfaceLuidToIndex(&luid, &mut index)? };
-        Ok(crate::InterfaceHandle::from_index_unchecked(index))
+        Ok(Self::from_index_unchecked(index))
     }
 
-    fn try_from_guid(guid: u128) -> Result<crate::InterfaceHandle, Error> {
+    fn try_from_guid(guid: u128) -> Result<Interface, Error> {
         let mut luid = NET_LUID_LH::default();
         unsafe { ConvertInterfaceGuidToLuid(&GUID::from_u128(guid), &mut luid)? };
         Self::try_from_luid(unsafe { luid.Value })
     }
 
-    fn try_from_alias(alias: &str) -> Result<crate::InterfaceHandle, Error> {
+    fn try_from_alias(alias: &str) -> Result<Interface, Error> {
         let mut luid = NET_LUID_LH::default();
-        let code = unsafe { ConvertInterfaceNameToLuidW(alias, &mut luid) }.map_err(HRESULT::from);
+        let alias = HSTRING::from(alias);
+        let code = unsafe { ConvertInterfaceNameToLuidW(&alias, &mut luid) }.map_err(HRESULT::from);
         match code {
             Ok(_) => Self::try_from_luid(unsafe { luid.Value }),
             Err(ERROR_INVALID_NAME) => Err(Error::InterfaceNotFound),
@@ -87,104 +110,56 @@ impl InterfaceHandleExt for InterfaceHandle {
             Err(e) => Err(WinError::from(e).into()),
         }
     }
-}
 
-impl InterfaceHandleExt for crate::InterfaceHandle {
-    fn try_from_luid(luid: u64) -> Result<crate::InterfaceHandle, Error> {
-        InterfaceHandle::try_from_luid(luid)
+    fn luid(&self) -> Result<u64, Error> {
+        let mut luid = NET_LUID_LH::default();
+
+        let code = unsafe { ConvertInterfaceIndexToLuid(self.index()?, &mut luid) };
+        match code.map_err(HRESULT::from) {
+            Ok(_) => Ok(unsafe { luid.Value }),
+            Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
+            Err(e) => Err(WinError::from(e).into()),
+        }
     }
 
-    fn try_from_guid(guid: u128) -> Result<crate::InterfaceHandle, Error> {
-        InterfaceHandle::try_from_guid(guid)
+    fn guid(&self) -> Result<u128, Error> {
+        let mut guid = GUID::zeroed();
+        let code = unsafe { ConvertInterfaceLuidToGuid(&self.0.net_luid_lh()?, &mut guid) };
+        match code.map_err(HRESULT::from) {
+            Ok(_) => Ok(guid.into()),
+            Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
+            Err(e) => Err(WinError::from(e).into()),
+        }
     }
 
-    fn try_from_alias(alias: &str) -> Result<crate::InterfaceHandle, Error> {
-        InterfaceHandle::try_from_alias(alias)
+    fn index(&self) -> Result<u32, Error> {
+        Ok(self.0.index)
+    }
+
+    fn alias(&self) -> Result<String, Error> {
+        let mut alias_buf = vec![0u16; (IF_MAX_STRING_SIZE + 1) as _];
+        let code = unsafe { ConvertInterfaceLuidToAlias(&self.0.net_luid_lh()?, &mut alias_buf) };
+
+        match code.map_err(HRESULT::from) {
+            Ok(_) => Ok(U16CString::from_vec_truncate(alias_buf).to_string()?),
+            Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
+            Err(e) => Err(WinError::from(e).into()),
+        }
+    }
+
+    fn description(&self) -> Result<String, Error> {
+        Ok(
+            U16CString::from_vec_truncate(self.0.mib_if_row2()?.Description.to_vec())
+                .to_string()?,
+        )
     }
 }
 
 impl InterfaceHandleCommonT for InterfaceHandle {
-    fn metadata(&self) -> Result<crate::Metadata, Error> {
-        let mut result = Metadata {
-            handle: crate::InterfaceHandle(*self),
-            index: self.index,
-            ..Default::default()
-        };
-
-        // MIB_IF_ROW2 data
-        {
-            let mut row = MIB_IF_ROW2 {
-                InterfaceIndex: self.index,
-                ..Default::default()
-            };
-            unsafe {
-                GetIfEntry2(&mut row).map_err(|_| Error::InterfaceNotFound)?;
-            }
-            result.description = U16CStr::from_slice_truncate(&row.Description)
-                .map_err(|_| Error::UnexpectedMetadata)?
-                .to_string()
-                .map_err(|_| Error::UnexpectedMetadata)?;
-            result.alias = U16CStr::from_slice_truncate(&row.Alias)
-                .map_err(|_| Error::UnexpectedMetadata)?
-                .to_string()
-                .map_err(|_| Error::UnexpectedMetadata)?;
-            result.guid = row.InterfaceGuid.into();
-            result.index = row.InterfaceIndex;
-            result.mtu = row.Mtu;
-            result.luid = unsafe { row.InterfaceLuid.Value };
-        }
-
-        // Interface name
-        {
-            let mut name_buf = vec![0u16; (IF_MAX_STRING_SIZE + 1) as _];
-            unsafe {
-                ConvertInterfaceLuidToNameW(
-                    &NET_LUID_LH {
-                        Value: self.luid()?,
-                    },
-                    &mut name_buf,
-                )
-            }
-            .map_err(|_| Error::UnexpectedMetadata)?;
-
-            result.name = U16CString::from_vec_truncate(name_buf)
-                .to_string()
-                .map_err(|_| Error::UnexpectedMetadata)?;
-        }
-
-        Ok(crate::Metadata(result))
-    }
-
-    fn add_ip(&self, network: IpNet) {
-        let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        unsafe { InitializeUnicastIpAddressEntry(&mut row as _) };
-
-        row.InterfaceIndex = self.index;
-        row.Address = SocketAddr::new(network.addr(), 0).into();
-        row.OnLinkPrefixLength = network.prefix_len();
-
-        unsafe {
-            CreateUnicastIpAddressEntry(&row).unwrap();
-        }
-    }
-
-    fn remove_ip(&self, network: IpNet) {
-        let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        unsafe { InitializeUnicastIpAddressEntry(&mut row as _) };
-
-        row.InterfaceIndex = self.index;
-        row.Address = SocketAddr::new(network.addr(), 0).into();
-        row.OnLinkPrefixLength = network.prefix_len();
-
-        unsafe {
-            DeleteUnicastIpAddressEntry(&row).unwrap();
-        }
-    }
-
-    fn get_addresses(&self) -> Result<Vec<IpNet>, Error> {
+    fn addresses(&self) -> Result<Vec<IpNet>, Error> {
         let mut table = std::ptr::null_mut();
 
-        unsafe { GetUnicastIpAddressTable(AF_UNSPEC.0 as _, &mut table) }.map_err(Error::from)?;
+        unsafe { GetUnicastIpAddressTable(AF_UNSPEC.0 as _, &mut table)? };
         let table = scopeguard::guard(table, |table| {
             if !table.is_null() {
                 unsafe {
@@ -193,25 +168,46 @@ impl InterfaceHandleCommonT for InterfaceHandle {
             }
         });
 
-        let mut addresses_set = HashSet::new();
+        let rows = unsafe {
+            std::slice::from_raw_parts((*(*table)).Table.as_ptr(), (*(*table)).NumEntries as _)
+        };
 
-        unsafe {
-            for i in 0..(*(*table)).NumEntries as _ {
-                let row = &(*(*table)).Table.get_unchecked(i);
-                let sockaddr = convert_sockaddr(row.Address);
+        let address_set: Result<HashSet<IpNet>, Error> = rows
+            .iter()
+            .filter(|row| row.InterfaceIndex == self.index)
+            .map(|row| {
+                IpNet::new(convert_sockaddr(row.Address).ip(), row.OnLinkPrefixLength)
+                    .map_err(|_| Error::UnexpectedMetadata)
+            })
+            .collect();
 
-                if row.InterfaceIndex != self.index {
-                    continue;
-                }
+        Ok(address_set?.into_iter().collect())
+    }
 
-                addresses_set.insert(
-                    IpNet::new(sockaddr.ip(), row.OnLinkPrefixLength)
-                        .map_err(|_| Error::UnexpectedMetadata)?,
-                );
-            }
-        }
+    fn add_address(&self, network: IpNet) -> Result<(), Error> {
+        let mut row = MIB_UNICASTIPADDRESS_ROW::default();
+        unsafe { InitializeUnicastIpAddressEntry(&mut row as _) };
 
-        Ok(addresses_set.iter().cloned().collect())
+        row.InterfaceIndex = self.index;
+        row.Address = SocketAddr::new(network.addr(), 0).into();
+        row.OnLinkPrefixLength = network.prefix_len();
+
+        unsafe { Ok(CreateUnicastIpAddressEntry(&row)?) }
+    }
+
+    fn remove_address(&self, network: IpNet) -> Result<(), Error> {
+        let mut row = MIB_UNICASTIPADDRESS_ROW::default();
+        unsafe { InitializeUnicastIpAddressEntry(&mut row as _) };
+
+        row.InterfaceIndex = self.index;
+        row.Address = SocketAddr::new(network.addr(), 0).into();
+        row.OnLinkPrefixLength = network.prefix_len();
+
+        unsafe { Ok(DeleteUnicastIpAddressEntry(&row)?) }
+    }
+
+    fn mtu(&self) -> Result<u32, Error> {
+        Ok(self.mib_if_row2()?.Mtu)
     }
 
     fn set_mtu(&self, mtu: u32) -> Result<(), Error> {
@@ -252,21 +248,37 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         Ok(())
     }
 
-    fn try_from_index(index: u32) -> Result<crate::InterfaceHandle, Error> {
-        let mut luid = NET_LUID_LH::default();
-        let code = unsafe { ConvertInterfaceIndexToLuid(index, &mut luid) };
+    fn name(&self) -> Result<String, Error> {
+        let mut name_buf = vec![0u16; (IF_MAX_STRING_SIZE + 1) as _];
+        let code = unsafe { ConvertInterfaceLuidToNameW(&self.net_luid_lh()?, &mut name_buf) };
+
         match code.map_err(HRESULT::from) {
-            Ok(_) => Ok(crate::InterfaceHandle::from_index_unchecked(index)),
+            Ok(_) => Ok(U16CString::from_vec_truncate(name_buf).to_string()?),
             Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
             Err(e) => Err(WinError::from(e).into()),
         }
     }
 
-    fn try_from_name(name: &str) -> Result<crate::InterfaceHandle, Error> {
+    fn try_from_name(name: &str) -> Result<Interface, Error> {
         let mut luid = NET_LUID_LH::default();
-        let code = unsafe { ConvertInterfaceNameToLuidW(name, &mut luid) };
+        let name = HSTRING::from(name);
+        let code = unsafe { ConvertInterfaceNameToLuidW(&name, &mut luid) };
         match code.map_err(HRESULT::from) {
-            Ok(_) => InterfaceHandle::try_from_luid(unsafe { luid.Value }),
+            Ok(_) => Interface::try_from_luid(unsafe { luid.Value }),
+            Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
+            Err(e) => Err(WinError::from(e).into()),
+        }
+    }
+
+    fn index(&self) -> Result<u32, Error> {
+        Ok(self.index)
+    }
+
+    fn try_from_index(index: u32) -> Result<Interface, Error> {
+        let mut luid = NET_LUID_LH::default();
+        let code = unsafe { ConvertInterfaceIndexToLuid(index, &mut luid) };
+        match code.map_err(HRESULT::from) {
+            Ok(_) => Ok(Interface::from_index_unchecked(index)),
             Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
             Err(e) => Err(WinError::from(e).into()),
         }

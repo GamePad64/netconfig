@@ -1,7 +1,9 @@
 use std::error::Error as StdError;
 use std::io;
 use thiserror::Error as ThisError;
+use widestring::error::Utf16Error;
 
+#[non_exhaustive]
 #[derive(Debug, ThisError)]
 pub enum Error {
     #[error("invalid parameter")]
@@ -26,12 +28,18 @@ impl From<nix::Error> for Error {
 #[cfg(target_os = "windows")]
 impl From<windows::core::Error> for Error {
     fn from(e: windows::core::Error) -> Self {
-        Error::Unknown(Box::new(e))
+        Self::Unknown(Box::new(e))
     }
 }
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
-        Error::Io(e)
+        Self::Io(e)
+    }
+}
+
+impl From<Utf16Error> for Error {
+    fn from(_: Utf16Error) -> Self {
+        Self::UnexpectedMetadata
     }
 }

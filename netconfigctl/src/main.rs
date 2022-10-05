@@ -1,9 +1,7 @@
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-use netconfig::sys::MetadataExt;
-use netconfig::{list_addresses, list_interfaces, InterfaceHandle};
+use netconfig::{list_addresses, list_interfaces};
 
 use clap::{Parser, Subcommand};
-use netconfig::sys::InterfaceHandleExt;
+use netconfig::sys::InterfaceExt;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -39,24 +37,23 @@ fn main() {
             println!("Addresses: {:?}", list_addresses())
         }
         Commands::ListInterfaces => {
-            for handle in list_interfaces().iter() {
-                let metadata = handle.metadata().unwrap();
-                println!("Index: {}", metadata.index());
-                println!("Name: {}", metadata.name());
+            for handle in list_interfaces().unwrap().iter() {
+                println!("Index: {}", handle.index().unwrap());
+                println!("Name: {}", handle.name().unwrap());
                 cfg_if::cfg_if! {
                     if #[cfg(any(target_os = "macos", target_os = "windows"))] {
-                        println!("Alias: {}", metadata.alias());
+                        println!("Alias: {}", handle.alias().unwrap());
                     }
                 }
                 cfg_if::cfg_if! {
                     if #[cfg(target_os = "windows")] {
-                        println!("GUID: {:?}", metadata.guid());
-                        println!("LUID: {:?}", metadata.luid());
+                        println!("GUID: {:?}", handle.guid());
+                        println!("LUID: {:?}", handle.luid());
                     }
                 }
-                println!("MTU: {}", metadata.mtu());
+                println!("MTU: {}", handle.mtu().unwrap());
 
-                for address in handle.get_addresses().unwrap() {
+                for address in handle.addresses().unwrap() {
                     println!("Address: {:?}", address);
                 }
                 println!();
@@ -64,7 +61,7 @@ fn main() {
         }
         #[cfg(unix)]
         Commands::SetIfParam { iface, param } => {
-            let handle = InterfaceHandle::try_from_name(&*iface).unwrap();
+            let handle = Interface::try_from_name(&*iface).unwrap();
             match param {
                 IfParam::Up => handle.set_up(true).unwrap(),
                 IfParam::Down => handle.set_up(false).unwrap(),
