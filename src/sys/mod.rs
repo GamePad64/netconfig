@@ -1,6 +1,14 @@
-#[derive(Default, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+use crate::Interface;
+
+#[derive(Debug, Clone)]
 pub(crate) struct InterfaceHandle {
     pub(crate) index: u32,
+}
+
+impl InterfaceHandle {
+    fn interface(&self) -> Interface {
+        Interface(self.clone())
+    }
 }
 
 cfg_if::cfg_if! {

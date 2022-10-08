@@ -14,7 +14,7 @@ pub mod sys;
 ///
 /// Index is chosen, because basically all operating systems use index as an identifier.
 /// This struct can be used to manipulate interface parameters, such as IP address and MTU.
-#[derive(Default, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Debug)]
 pub struct Interface(sys::InterfaceHandle);
 
 impl Interface {
@@ -22,12 +22,16 @@ impl Interface {
         to self.0 {
             pub fn add_address(&self, network: IpNet) -> Result<(), Error>;
             pub fn remove_address(&self, network: IpNet) -> Result<(), Error>;
+            /// Returns array of IP addresses, assigned to this Interface
             pub fn addresses(&self) -> Result<Vec<IpNet>, Error>;
+
+            pub fn mtu(&self) -> Result<u32, Error>;
             pub fn set_mtu(&self, mtu: u32) -> Result<(), Error>;
 
             pub fn name(&self) -> Result<String, Error>;
-            pub fn mtu(&self) -> Result<u32, Error>;
             pub fn index(&self) -> Result<u32, Error>;
+            /// Returns MAC address, assigned to this Interface
+            pub fn hwaddr(&self) -> Result<[u8; 6], Error>;
         }
     }
 

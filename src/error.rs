@@ -38,6 +38,7 @@ impl From<io::Error> for Error {
     }
 }
 
+#[cfg(target_os = "windows")]
 impl From<Utf16Error> for Error {
     fn from(_: Utf16Error) -> Self {
         Self::UnexpectedMetadata

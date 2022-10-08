@@ -1,3 +1,4 @@
+use crate::sys::mib_table::MibTable;
 use crate::sys::InterfaceHandle;
 use crate::{Error, Interface, InterfaceHandleCommonT};
 use ipnet::IpNet;
@@ -7,25 +8,23 @@ use std::io::{self, ErrorKind};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use widestring::U16CString;
 use windows::core::{Error as WinError, GUID, HRESULT, HSTRING};
+use windows::Win32::Foundation;
 use windows::Win32::NetworkManagement::IpHelper::{
-    ConvertInterfaceGuidToLuid, ConvertInterfaceIndexToLuid, ConvertInterfaceLuidToAlias,
-    ConvertInterfaceLuidToGuid, ConvertInterfaceLuidToIndex, ConvertInterfaceLuidToNameW,
-    ConvertInterfaceNameToLuidW, CreateUnicastIpAddressEntry, DeleteUnicastIpAddressEntry,
-    FreeMibTable, GetIfEntry2, GetIpInterfaceEntry, GetUnicastIpAddressTable,
-    InitializeUnicastIpAddressEntry, SetIpInterfaceEntry, MIB_IF_ROW2, MIB_IPINTERFACE_ROW,
-    MIB_UNICASTIPADDRESS_ROW,
+    ConvertInterfaceAliasToLuid, ConvertInterfaceGuidToLuid, ConvertInterfaceIndexToLuid,
+    ConvertInterfaceLuidToAlias, ConvertInterfaceLuidToGuid, ConvertInterfaceLuidToIndex,
+    ConvertInterfaceLuidToNameW, ConvertInterfaceNameToLuidW, CreateUnicastIpAddressEntry,
+    DeleteUnicastIpAddressEntry, GetIfEntry2, GetIpInterfaceEntry, InitializeUnicastIpAddressEntry,
+    SetIpInterfaceEntry, MIB_IF_ROW2, MIB_IPINTERFACE_ROW, MIB_UNICASTIPADDRESS_ROW,
 };
 use windows::Win32::NetworkManagement::Ndis::{IF_MAX_STRING_SIZE, NET_LUID_LH};
 use windows::Win32::Networking::WinSock::{
     ADDRESS_FAMILY, AF_INET, AF_INET6, AF_UNSPEC, SOCKADDR_INET,
 };
 
-const ERROR_ACCESS_DENIED: HRESULT = windows::Win32::Foundation::ERROR_ACCESS_DENIED.to_hresult();
-const ERROR_FILE_NOT_FOUND: HRESULT = windows::Win32::Foundation::ERROR_FILE_NOT_FOUND.to_hresult();
-const ERROR_INVALID_NAME: HRESULT = windows::Win32::Foundation::ERROR_INVALID_NAME.to_hresult();
-const ERROR_INVALID_PARAMETER: HRESULT =
-    windows::Win32::Foundation::ERROR_INVALID_PARAMETER.to_hresult();
-const ERROR_NOT_FOUND: HRESULT = windows::Win32::Foundation::ERROR_NOT_FOUND.to_hresult();
+const ERROR_ACCESS_DENIED: HRESULT = Foundation::ERROR_ACCESS_DENIED.to_hresult();
+const ERROR_FILE_NOT_FOUND: HRESULT = Foundation::ERROR_FILE_NOT_FOUND.to_hresult();
+const ERROR_INVALID_NAME: HRESULT = Foundation::ERROR_INVALID_NAME.to_hresult();
+const ERROR_NOT_FOUND: HRESULT = Foundation::ERROR_NOT_FOUND.to_hresult();
 
 fn convert_sockaddr(sa: SOCKADDR_INET) -> SocketAddr {
     unsafe {
@@ -44,31 +43,34 @@ fn convert_sockaddr(sa: SOCKADDR_INET) -> SocketAddr {
 }
 
 impl InterfaceHandle {
-    fn luid(&self) -> Result<u64, Error> {
-        let mut luid = NET_LUID_LH::default();
-
-        let code = unsafe { ConvertInterfaceIndexToLuid(self.index, &mut luid) };
-        match code.map_err(HRESULT::from) {
-            Ok(_) => Ok(unsafe { luid.Value }),
-            Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
-            Err(e) => Err(WinError::from(e).into()),
-        }
-    }
-
     fn mib_if_row2(&self) -> Result<MIB_IF_ROW2, Error> {
         let mut row = MIB_IF_ROW2 {
             InterfaceIndex: self.index,
             ..Default::default()
         };
-        unsafe {
-            GetIfEntry2(&mut row).map_err(|_| Error::InterfaceNotFound)?;
+        let code = unsafe { GetIfEntry2(&mut row) };
+
+        match code.map_err(HRESULT::from) {
+            Ok(_) => Ok(row),
+            Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
+            Err(e) => Err(WinError::from(e).into()),
         }
-        Ok(row)
+    }
+
+    fn mib_unicastipaddress_row(&self, network: IpNet) -> MIB_UNICASTIPADDRESS_ROW {
+        let mut row = MIB_UNICASTIPADDRESS_ROW::default();
+        unsafe { InitializeUnicastIpAddressEntry(&mut row as _) };
+
+        row.InterfaceIndex = self.index;
+        row.Address = SocketAddr::new(network.addr(), 0).into();
+        row.OnLinkPrefixLength = network.prefix_len();
+
+        row
     }
 
     fn net_luid_lh(&self) -> Result<NET_LUID_LH, Error> {
         Ok(NET_LUID_LH {
-            Value: self.luid()?,
+            Value: self.interface().luid()?,
         })
     }
 }
@@ -80,7 +82,6 @@ pub trait InterfaceExt {
 
     fn luid(&self) -> Result<u64, Error>;
     fn guid(&self) -> Result<u128, Error>;
-    fn index(&self) -> Result<u32, Error>;
     fn alias(&self) -> Result<String, Error>;
     fn description(&self) -> Result<String, Error>;
 }
@@ -102,11 +103,10 @@ impl InterfaceExt for Interface {
     fn try_from_alias(alias: &str) -> Result<Interface, Error> {
         let mut luid = NET_LUID_LH::default();
         let alias = HSTRING::from(alias);
-        let code = unsafe { ConvertInterfaceNameToLuidW(&alias, &mut luid) }.map_err(HRESULT::from);
+        let code = unsafe { ConvertInterfaceAliasToLuid(&alias, &mut luid) }.map_err(HRESULT::from);
         match code {
             Ok(_) => Self::try_from_luid(unsafe { luid.Value }),
             Err(ERROR_INVALID_NAME) => Err(Error::InterfaceNotFound),
-            Err(ERROR_INVALID_PARAMETER) => Err(Error::InvalidParameter),
             Err(e) => Err(WinError::from(e).into()),
         }
     }
@@ -132,10 +132,6 @@ impl InterfaceExt for Interface {
         }
     }
 
-    fn index(&self) -> Result<u32, Error> {
-        Ok(self.0.index)
-    }
-
     fn alias(&self) -> Result<String, Error> {
         let mut alias_buf = vec![0u16; (IF_MAX_STRING_SIZE + 1) as _];
         let code = unsafe { ConvertInterfaceLuidToAlias(&self.0.net_luid_lh()?, &mut alias_buf) };
@@ -157,53 +153,28 @@ impl InterfaceExt for Interface {
 
 impl InterfaceHandleCommonT for InterfaceHandle {
     fn addresses(&self) -> Result<Vec<IpNet>, Error> {
-        let mut table = std::ptr::null_mut();
-
-        unsafe { GetUnicastIpAddressTable(AF_UNSPEC.0 as _, &mut table)? };
-        let table = scopeguard::guard(table, |table| {
-            if !table.is_null() {
-                unsafe {
-                    FreeMibTable(table as _);
-                }
-            }
-        });
-
-        let rows = unsafe {
-            std::slice::from_raw_parts((*(*table)).Table.as_ptr(), (*(*table)).NumEntries as _)
-        };
-
-        let address_set: Result<HashSet<IpNet>, Error> = rows
-            .iter()
-            .filter(|row| row.InterfaceIndex == self.index)
-            .map(|row| {
-                IpNet::new(convert_sockaddr(row.Address).ip(), row.OnLinkPrefixLength)
-                    .map_err(|_| Error::UnexpectedMetadata)
-            })
-            .collect();
+        let address_set: Result<HashSet<IpNet>, Error> =
+            MibTable::GetUnicastIpAddressTable(&AF_UNSPEC)?
+                .as_slice()
+                .iter()
+                .filter(|row| row.InterfaceIndex == self.index)
+                .map(|row| {
+                    IpNet::new(convert_sockaddr(row.Address).ip(), row.OnLinkPrefixLength)
+                        .map_err(|_| Error::UnexpectedMetadata)
+                })
+                .collect();
 
         Ok(address_set?.into_iter().collect())
     }
 
     fn add_address(&self, network: IpNet) -> Result<(), Error> {
-        let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        unsafe { InitializeUnicastIpAddressEntry(&mut row as _) };
-
-        row.InterfaceIndex = self.index;
-        row.Address = SocketAddr::new(network.addr(), 0).into();
-        row.OnLinkPrefixLength = network.prefix_len();
-
-        unsafe { Ok(CreateUnicastIpAddressEntry(&row)?) }
+        let entry = self.mib_unicastipaddress_row(network);
+        unsafe { Ok(CreateUnicastIpAddressEntry(&entry)?) }
     }
 
     fn remove_address(&self, network: IpNet) -> Result<(), Error> {
-        let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        unsafe { InitializeUnicastIpAddressEntry(&mut row as _) };
-
-        row.InterfaceIndex = self.index;
-        row.Address = SocketAddr::new(network.addr(), 0).into();
-        row.OnLinkPrefixLength = network.prefix_len();
-
-        unsafe { Ok(DeleteUnicastIpAddressEntry(&row)?) }
+        let entry = self.mib_unicastipaddress_row(network);
+        unsafe { Ok(DeleteUnicastIpAddressEntry(&entry)?) }
     }
 
     fn mtu(&self) -> Result<u32, Error> {
@@ -282,5 +253,11 @@ impl InterfaceHandleCommonT for InterfaceHandle {
             Err(ERROR_FILE_NOT_FOUND) => Err(Error::InterfaceNotFound),
             Err(e) => Err(WinError::from(e).into()),
         }
+    }
+
+    fn hwaddr(&self) -> Result<[u8; 6], Error> {
+        self.mib_if_row2()?.PhysicalAddress[..6]
+            .try_into()
+            .map_err(|_| Error::UnexpectedMetadata)
     }
 }
