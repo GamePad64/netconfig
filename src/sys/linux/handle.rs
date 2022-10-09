@@ -5,6 +5,7 @@ use delegate::delegate;
 use ipnet::IpNet;
 use libc::{AF_INET, AF_INET6, ARPHRD_ETHER};
 use log::debug;
+use netconfig_macaddr::MacAddr6;
 use netlink_packet_route::address::Nla as AddressNla;
 use netlink_packet_route::{
     AddressMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload, RtnlMessage, NLM_F_DUMP,
@@ -19,7 +20,7 @@ use std::os::unix::io::AsRawFd;
 pub trait InterfaceExt {
     fn set_up(&self, v: bool) -> Result<(), Error>;
     fn set_running(&self, v: bool) -> Result<(), Error>;
-    fn set_hwaddress(&self, hwaddress: [u8; 6]) -> Result<(), Error>;
+    fn set_hwaddress(&self, hwaddress: MacAddr6) -> Result<(), Error>;
 }
 
 // Private interface
@@ -76,17 +77,14 @@ impl InterfaceHandle {
         Ok(())
     }
 
-    pub fn hwaddress(&self) -> Result<[u8; 6], Error> {
+    pub fn hwaddress(&self) -> Result<MacAddr6, Error> {
         let mut req = ifreq::new(self.name()?);
         let socket = dummy_socket()?;
 
         unsafe { ioctls::siocgifhwaddr(socket.as_raw_fd(), &mut req) }?;
-        let hwaddress: [libc::c_char; 6] = unsafe { &req.ifr_ifru.ifru_hwaddr.sa_data[0..6] }
+        Ok(unsafe { &req.ifr_ifru.ifru_hwaddr.sa_data[0..6] }
             .try_into()
-            .unwrap();
-        let hwaddress = hwaddress.map(|a| a as u8);
-
-        Ok(hwaddress)
+            .unwrap())
     }
 }
 
@@ -98,16 +96,15 @@ impl InterfaceExt for Interface {
         }
     }
 
-    fn set_hwaddress(&self, hwaddress: [u8; 6]) -> Result<(), Error> {
+    fn set_hwaddress(&self, hwaddress: MacAddr6) -> Result<(), Error> {
         let mut req = ifreq::new(self.name()?);
         req.ifr_ifru.ifru_hwaddr = libc::sockaddr {
             sa_family: ARPHRD_ETHER,
             sa_data: unsafe { std::mem::zeroed() },
         };
 
-        let hwaddress = hwaddress.map(|i| i as libc::c_char);
         unsafe {
-            req.ifr_ifru.ifru_hwaddr.sa_data[0..6].copy_from_slice(&hwaddress);
+            req.ifr_ifru.ifru_hwaddr.sa_data[0..6].copy_from_slice(hwaddress.as_c_slice());
         }
 
         let socket = dummy_socket()?;

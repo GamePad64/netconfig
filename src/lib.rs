@@ -5,7 +5,9 @@ use delegate::delegate;
 pub use error::Error;
 pub use ipnet;
 use ipnet::IpNet;
+use netconfig_macaddr::MacAddr6;
 use std::collections::HashSet;
+
 pub mod sys;
 
 /// Wrapped interface index.
@@ -29,7 +31,7 @@ impl Interface {
             pub fn name(&self) -> Result<String, Error>;
             pub fn index(&self) -> Result<u32, Error>;
             /// Returns MAC address, assigned to this Interface
-            pub fn hwaddress(&self) -> Result<[u8; 6], Error>;
+            pub fn hwaddress(&self) -> Result<MacAddr6, Error>;
         }
     }
 

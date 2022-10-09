@@ -58,7 +58,7 @@ fn main() {
                 }
 
                 if let Ok(hwaddress) = handle.hwaddress() {
-                    println!("MAC: {}", hwaddress.map(|a| hex::encode([a])).join(":"));
+                    println!("MAC: {hwaddress}");
                 }
 
                 println!();
