@@ -1,4 +1,4 @@
-use netconfig::{list_addresses, list_interfaces};
+use netconfig::{list_addresses, list_interfaces, Interface};
 
 use clap::{Parser, Subcommand};
 use netconfig::sys::InterfaceExt;
@@ -56,12 +56,17 @@ fn main() {
                 for address in handle.addresses().unwrap() {
                     println!("Address: {:?}", address);
                 }
+
+                if let Ok(hwaddress) = handle.hwaddress() {
+                    println!("MAC: {}", hwaddress.map(|a| hex::encode([a])).join(":"));
+                }
+
                 println!();
             }
         }
         #[cfg(unix)]
         Commands::SetIfParam { iface, param } => {
-            let handle = Interface::try_from_name(&*iface).unwrap();
+            let handle = Interface::try_from_name(&iface).unwrap();
             match param {
                 IfParam::Up => handle.set_up(true).unwrap(),
                 IfParam::Down => handle.set_up(false).unwrap(),

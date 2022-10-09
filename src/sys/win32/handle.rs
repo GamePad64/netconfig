@@ -255,7 +255,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         }
     }
 
-    fn hwaddr(&self) -> Result<[u8; 6], Error> {
+    fn hwaddress(&self) -> Result<[u8; 6], Error> {
         self.mib_if_row2()?.PhysicalAddress[..6]
             .try_into()
             .map_err(|_| Error::UnexpectedMetadata)

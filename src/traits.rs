@@ -15,5 +15,5 @@ pub(crate) trait InterfaceHandleCommonT {
     fn index(&self) -> Result<u32, Error>;
     fn try_from_index(index: u32) -> Result<Interface, Error>;
 
-    fn hwaddr(&self) -> Result<[u8; 6], Error>;
+    fn hwaddress(&self) -> Result<[u8; 6], Error>;
 }

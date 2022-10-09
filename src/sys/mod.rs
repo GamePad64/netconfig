@@ -6,6 +6,7 @@ pub(crate) struct InterfaceHandle {
 }
 
 impl InterfaceHandle {
+    #[allow(unused)]
     fn interface(&self) -> Interface {
         Interface(self.clone())
     }
@@ -18,8 +19,9 @@ cfg_if::cfg_if! {
         pub use win32::InterfaceExt;
     } else if #[cfg(target_os = "linux")] {
         mod linux;
+        #[allow(unused)]
         pub(crate) use linux::*;
-        pub use linux::{InterfaceHandleExt, MetadataExt};
+        pub use linux::InterfaceExt;
     } else if #[cfg(target_os = "macos")] {
         mod darwin;
         pub(crate) use darwin::*;
@@ -30,5 +32,6 @@ cfg_if::cfg_if! {
 cfg_if::cfg_if! {
     if #[cfg(unix)] {
         pub mod posix;
+        pub(crate) use posix::*;
     }
 }

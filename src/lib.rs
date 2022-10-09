@@ -7,7 +7,6 @@ pub use error::Error;
 pub use ipnet;
 use ipnet::IpNet;
 use std::collections::HashSet;
-use traits::InterfaceHandleCommonT;
 pub mod sys;
 
 /// Wrapped interface index.
@@ -31,7 +30,7 @@ impl Interface {
             pub fn name(&self) -> Result<String, Error>;
             pub fn index(&self) -> Result<u32, Error>;
             /// Returns MAC address, assigned to this Interface
-            pub fn hwaddr(&self) -> Result<[u8; 6], Error>;
+            pub fn hwaddress(&self) -> Result<[u8; 6], Error>;
         }
     }
 

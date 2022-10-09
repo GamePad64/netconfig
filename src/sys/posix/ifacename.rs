@@ -52,10 +52,10 @@ impl TryFrom<&str> for InterfaceName {
     }
 }
 
-impl TryFrom<&InterfaceName> for String {
+impl TryFrom<InterfaceName> for String {
     type Error = InterfaceNameError;
 
-    fn try_from(value: &InterfaceName) -> Result<Self, Self::Error> {
+    fn try_from(value: InterfaceName) -> Result<Self, Self::Error> {
         if !value.is_valid() {
             return Err(InterfaceNameError::InvalidCString(value.0.to_vec()));
         }
