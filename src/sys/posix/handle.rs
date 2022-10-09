@@ -7,7 +7,7 @@ use nix::ifaddrs::getifaddrs;
 use nix::net::if_::InterfaceFlags;
 use nix::sys::socket::AddressFamily::{Inet, Inet6};
 use nix::sys::socket::SockaddrLike;
-use std::net;
+use std::net::IpAddr;
 use std::os::unix::io::AsRawFd;
 
 impl InterfaceHandle {
@@ -16,31 +16,22 @@ impl InterfaceHandle {
         let name = self.name()?;
 
         for interface in getifaddrs()?.filter(|x| x.interface_name == name) {
-            if interface.address.is_none() || interface.netmask.is_none() {
-                continue;
-            }
-
             if let (Some(address), Some(netmask)) = (interface.address, interface.netmask) {
-                let network = if address.family().unwrap() == Inet
-                    && netmask.family().unwrap() == Inet
-                {
-                    let addr: net::Ipv4Addr = address.as_sockaddr_in().unwrap().ip().into();
-                    let prefix = ipnetwork::ipv4_mask_to_prefix(
-                        netmask.as_sockaddr_in().unwrap().ip().into(),
-                    )
-                    .unwrap();
-                    IpNet::new(addr.into(), prefix).unwrap()
-                } else if address.family().unwrap() == Inet6 && netmask.family().unwrap() == Inet6 {
-                    let addr: net::Ipv6Addr = address.as_sockaddr_in6().unwrap().ip();
-                    let prefix =
-                        ipnetwork::ipv6_mask_to_prefix(netmask.as_sockaddr_in6().unwrap().ip())
-                            .unwrap();
-                    IpNet::new(addr.into(), prefix).unwrap()
-                } else {
-                    return Err(Error::UnexpectedMetadata);
+                let (address, netmask) = match (address.family(), netmask.family()) {
+                    (Some(Inet), Some(Inet)) => (
+                        IpAddr::V4(address.as_sockaddr_in().unwrap().ip().into()),
+                        IpAddr::V4(netmask.as_sockaddr_in().unwrap().ip().into()),
+                    ),
+                    (Some(Inet6), Some(Inet6)) => (
+                        IpAddr::V6(address.as_sockaddr_in6().unwrap().ip()),
+                        IpAddr::V6(netmask.as_sockaddr_in6().unwrap().ip()),
+                    ),
+                    (_, _) => continue,
                 };
 
-                result.push(network);
+                let prefix = ipnetwork::ip_mask_to_prefix(netmask).unwrap();
+
+                result.push(IpNet::new(address, prefix).unwrap());
             }
         }
         Ok(result)
