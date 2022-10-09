@@ -39,7 +39,7 @@ impl From<io::Error> for Error {
 
 #[cfg(windows)]
 impl From<widestring::error::Utf16Error> for Error {
-    fn from(_: Utf16Error) -> Self {
+    fn from(_: widestring::error::Utf16Error) -> Self {
         Self::UnexpectedMetadata
     }
 }

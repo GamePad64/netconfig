@@ -1,6 +1,6 @@
 use crate::sys::mib_table::MibTable;
 use crate::sys::InterfaceHandle;
-use crate::{Error, Interface, InterfaceHandleCommonT};
+use crate::{Error, Interface};
 use ipnet::IpNet;
 use log::warn;
 use std::collections::HashSet;
@@ -151,8 +151,8 @@ impl InterfaceExt for Interface {
     }
 }
 
-impl InterfaceHandleCommonT for InterfaceHandle {
-    fn addresses(&self) -> Result<Vec<IpNet>, Error> {
+impl InterfaceHandle {
+    pub fn addresses(&self) -> Result<Vec<IpNet>, Error> {
         let address_set: Result<HashSet<IpNet>, Error> =
             MibTable::GetUnicastIpAddressTable(&AF_UNSPEC)?
                 .as_slice()
@@ -167,21 +167,21 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         Ok(address_set?.into_iter().collect())
     }
 
-    fn add_address(&self, network: IpNet) -> Result<(), Error> {
+    pub fn add_address(&self, network: IpNet) -> Result<(), Error> {
         let entry = self.mib_unicastipaddress_row(network);
         unsafe { Ok(CreateUnicastIpAddressEntry(&entry)?) }
     }
 
-    fn remove_address(&self, network: IpNet) -> Result<(), Error> {
+    pub fn remove_address(&self, network: IpNet) -> Result<(), Error> {
         let entry = self.mib_unicastipaddress_row(network);
         unsafe { Ok(DeleteUnicastIpAddressEntry(&entry)?) }
     }
 
-    fn mtu(&self) -> Result<u32, Error> {
+    pub fn mtu(&self) -> Result<u32, Error> {
         Ok(self.mib_if_row2()?.Mtu)
     }
 
-    fn set_mtu(&self, mtu: u32) -> Result<(), Error> {
+    pub fn set_mtu(&self, mtu: u32) -> Result<(), Error> {
         for family in [AF_INET, AF_INET6] {
             let mut row = MIB_IPINTERFACE_ROW {
                 Family: family.0 as _,
@@ -219,7 +219,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         Ok(())
     }
 
-    fn name(&self) -> Result<String, Error> {
+    pub fn name(&self) -> Result<String, Error> {
         let mut name_buf = vec![0u16; (IF_MAX_STRING_SIZE + 1) as _];
         let code = unsafe { ConvertInterfaceLuidToNameW(&self.net_luid_lh()?, &mut name_buf) };
 
@@ -230,7 +230,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         }
     }
 
-    fn try_from_name(name: &str) -> Result<Interface, Error> {
+    pub fn try_from_name(name: &str) -> Result<Interface, Error> {
         let mut luid = NET_LUID_LH::default();
         let name = HSTRING::from(name);
         let code = unsafe { ConvertInterfaceNameToLuidW(&name, &mut luid) };
@@ -241,11 +241,11 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         }
     }
 
-    fn index(&self) -> Result<u32, Error> {
+    pub fn index(&self) -> Result<u32, Error> {
         Ok(self.index)
     }
 
-    fn try_from_index(index: u32) -> Result<Interface, Error> {
+    pub fn try_from_index(index: u32) -> Result<Interface, Error> {
         let mut luid = NET_LUID_LH::default();
         let code = unsafe { ConvertInterfaceIndexToLuid(index, &mut luid) };
         match code.map_err(HRESULT::from) {
@@ -255,7 +255,7 @@ impl InterfaceHandleCommonT for InterfaceHandle {
         }
     }
 
-    fn hwaddress(&self) -> Result<[u8; 6], Error> {
+    pub fn hwaddress(&self) -> Result<[u8; 6], Error> {
         self.mib_if_row2()?.PhysicalAddress[..6]
             .try_into()
             .map_err(|_| Error::UnexpectedMetadata)

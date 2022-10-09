@@ -1,7 +1,6 @@
 extern crate core;
 
 mod error;
-mod traits;
 use delegate::delegate;
 pub use error::Error;
 pub use ipnet;
