@@ -59,7 +59,7 @@ impl InterfaceHandle {
 
         let mut req = NetlinkMessage {
             header: NetlinkHeader {
-                flags: NLM_F_DUMP | NLM_F_REQUEST,
+                flags: NLM_F_REQUEST,
                 ..Default::default()
             },
             payload: NetlinkPayload::from(RtnlMessage::DelAddress(message)),
