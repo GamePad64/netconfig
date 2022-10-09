@@ -61,7 +61,7 @@ impl InterfaceHandle {
         todo!()
     }
 
-    pub fn hwaddress(&self) -> Result<[u8; 6], Error> {
+    pub fn hwaddress(&self) -> Result<MacAddr6, Error> {
         todo!()
     }
 }

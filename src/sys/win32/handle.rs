@@ -3,6 +3,7 @@ use crate::sys::InterfaceHandle;
 use crate::{Error, Interface};
 use ipnet::IpNet;
 use log::warn;
+use netconfig_macaddr::MacAddr6;
 use std::collections::HashSet;
 use std::io::{self, ErrorKind};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -255,7 +256,7 @@ impl InterfaceHandle {
         }
     }
 
-    pub fn hwaddress(&self) -> Result<[u8; 6], Error> {
+    pub fn hwaddress(&self) -> Result<MacAddr6, Error> {
         self.mib_if_row2()?.PhysicalAddress[..6]
             .try_into()
             .map_err(|_| Error::UnexpectedMetadata)

@@ -12,7 +12,6 @@ serde = { version = "1.0.145", features = ["derive"] }
 thiserror = "1.0.37"
 rand = "0.8.5"
 hex = "0.4.3"
-num-traits = "0.2.15"
 
 [dev-dependencies]
 serde_json = "1.0.85"
