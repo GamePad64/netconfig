@@ -51,21 +51,15 @@ pub struct ifmap {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct ifaliasreq4 {
+pub struct ifaliasreq<SA> {
     pub ifra_name: InterfaceName,
-    pub ifra_addr: libc::sockaddr_in,
-    pub ifra_broadaddr: libc::sockaddr_in,
-    pub ifra_mask: libc::sockaddr_in,
+    pub ifra_addr: SA,
+    pub ifra_broadaddr: SA,
+    pub ifra_mask: SA,
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ifaliasreq6 {
-    pub ifra_name: InterfaceName,
-    pub ifra_addr: libc::sockaddr_in6,
-    pub ifra_broadaddr: libc::sockaddr_in6,
-    pub ifra_mask: libc::sockaddr_in6,
-}
+pub type ifaliasreq4 = ifaliasreq<libc::sockaddr_in>;
+pub type ifaliasreq6 = ifaliasreq<libc::sockaddr_in6>;
 
 impl ifreq {
     pub fn new<T: Into<String>>(name: T) -> Self {
