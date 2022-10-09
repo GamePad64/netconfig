@@ -6,7 +6,7 @@ use delegate::delegate;
 use ipnet::IpNet;
 use nix::sys::socket::{SockaddrIn, SockaddrIn6};
 use std::net;
-use std::os::fd::AsRawFd;
+use std::os::unix::io::AsRawFd;
 
 pub trait InterfaceExt {
     fn set_up(&self, v: bool) -> Result<(), Error>;
