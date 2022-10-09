@@ -1,86 +1,83 @@
 use super::scinterface::SCNetworkInterface;
-use super::Metadata;
-use crate::sys::posix::{
-    if_add_addr, if_addr, if_indextoname, if_mtu, if_nametoindex, if_set_flags,
-    if_set_flags_masked, if_set_mtu,
-};
-use crate::sys::InterfaceHandle;
-use crate::{Error, InterfaceHandleCommonT};
+use crate::sys::ifreq;
+use crate::sys::{dummy_socket, ioctls, InterfaceHandle};
+use crate::{Error, Interface};
 use delegate::delegate;
 use ipnet::IpNet;
+use nix::sys::socket::{SockaddrIn, SockaddrIn6};
+use std::net;
+use std::os::unix::io::AsRawFd;
 
-pub trait InterfaceHandleExt {
+pub trait InterfaceExt {
     fn set_up(&self, v: bool) -> Result<(), Error>;
     fn set_running(&self, v: bool) -> Result<(), Error>;
-    fn set_flags(&self, flags: i16) -> Result<(), Error>;
+    fn alias(&self) -> Result<String, Error>;
 }
 
-impl InterfaceHandleExt for crate::InterfaceHandle {
+impl InterfaceHandle {
+    pub fn add_address(&self, network: IpNet) -> Result<(), Error> {
+        let socket = dummy_socket()?;
+        let name = self.name()?;
+        match network {
+            IpNet::V4(addr4) => {
+                let ifra_addr = SockaddrIn::from(net::SocketAddrV4::new(addr4.addr(), 0));
+                let ifra_broadaddr = SockaddrIn::from(net::SocketAddrV4::new(addr4.broadcast(), 0));
+                let ifra_mask = SockaddrIn::from(net::SocketAddrV4::new(addr4.netmask(), 0));
+
+                let req = ifreq::ifaliasreq4 {
+                    ifra_name: name.parse().unwrap(),
+                    ifra_addr: *ifra_addr.as_ref(),
+                    ifra_broadaddr: *ifra_broadaddr.as_ref(),
+                    ifra_mask: *ifra_mask.as_ref(),
+                };
+
+                unsafe {
+                    ioctls::siocaifaddr4(socket.as_raw_fd(), &req)?;
+                }
+                Ok(())
+            }
+            IpNet::V6(addr6) => {
+                let ifra_addr = SockaddrIn6::from(net::SocketAddrV6::new(addr6.addr(), 0, 0, 0));
+                let ifra_broadaddr =
+                    SockaddrIn6::from(net::SocketAddrV6::new(addr6.broadcast(), 0, 0, 0));
+                let ifra_mask = SockaddrIn6::from(net::SocketAddrV6::new(addr6.netmask(), 0, 0, 0));
+
+                let req = ifreq::ifaliasreq6 {
+                    ifra_name: name.parse().unwrap(),
+                    ifra_addr: *ifra_addr.as_ref(),
+                    ifra_broadaddr: *ifra_broadaddr.as_ref(),
+                    ifra_mask: *ifra_mask.as_ref(),
+                };
+
+                unsafe {
+                    ioctls::siocaifaddr6(socket.as_raw_fd(), &req)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub fn remove_address(&self, _network: IpNet) -> Result<(), Error> {
+        todo!()
+    }
+
+    pub fn hwaddress(&self) -> Result<[u8; 6], Error> {
+        todo!()
+    }
+}
+
+impl InterfaceExt for Interface {
+    fn alias(&self) -> Result<String, Error> {
+        match SCNetworkInterface::get_displayname(&self.name()?) {
+            Some(alias) => Ok(alias),
+            None => Ok(self.name()?),
+        }
+    }
+
     delegate! {
         to self.0 {
             fn set_up(&self, v: bool) -> Result<(), Error>;
             fn set_running(&self, v: bool) -> Result<(), Error>;
-            fn set_flags(&self, flags: i16) -> Result<(), Error> ;
         }
-    }
-}
-
-impl InterfaceHandle {
-    fn name(&self) -> Result<String, Error> {
-        if_indextoname(self.index)
-    }
-}
-
-impl InterfaceHandleCommonT for InterfaceHandle {
-    fn metadata(&self) -> Result<crate::Metadata, Error> {
-        let name = self.name()?;
-        let metadata = Metadata {
-            handle: crate::InterfaceHandle(*self),
-            index: self.index,
-            name: name.clone(),
-            alias: SCNetworkInterface::get_displayname(&name).unwrap_or_else(|| name.clone()),
-            mtu: if_mtu(&*name)?,
-            ..Default::default()
-        };
-
-        Ok(crate::Metadata(metadata))
-    }
-
-    fn add_ip(&self, network: IpNet) {
-        if_add_addr(&*self.name().unwrap(), network).unwrap()
-    }
-
-    fn remove_ip(&self, _network: IpNet) {
-        todo!()
-    }
-
-    fn get_addresses(&self) -> Result<Vec<IpNet>, Error> {
-        if_addr(&*self.name()?)
-    }
-
-    fn set_mtu(&self, mtu: u32) -> Result<(), Error> {
-        if_set_mtu(&*self.name()?, mtu)
-    }
-
-    fn try_from_index(index: u32) -> Result<crate::InterfaceHandle, Error> {
-        if_indextoname(index).map(|_| crate::InterfaceHandle::from_index_unchecked(index))
-    }
-
-    fn try_from_name(name: &str) -> Result<crate::InterfaceHandle, Error> {
-        if_nametoindex(name).map(crate::InterfaceHandle::from_index_unchecked)
-    }
-}
-
-impl InterfaceHandleExt for InterfaceHandle {
-    fn set_up(&self, v: bool) -> Result<(), Error> {
-        if_set_flags_masked(&*self.name()?, libc::IFF_UP as i16, v).map(|_| ())
-    }
-
-    fn set_running(&self, v: bool) -> Result<(), Error> {
-        if_set_flags_masked(&*self.name()?, libc::IFF_RUNNING as i16, v).map(|_| ())
-    }
-
-    fn set_flags(&self, flags: i16) -> Result<(), Error> {
-        if_set_flags(&self.name()?, flags as _).map(|_| ())
     }
 }

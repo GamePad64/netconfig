@@ -24,8 +24,9 @@ cfg_if::cfg_if! {
         pub use linux::InterfaceExt;
     } else if #[cfg(target_os = "macos")] {
         mod darwin;
+        #[allow(unused)]
         pub(crate) use darwin::*;
-        pub use darwin::{InterfaceHandleExt, MetadataExt};
+        pub use darwin::{InterfaceExt};
     }
 }
 
