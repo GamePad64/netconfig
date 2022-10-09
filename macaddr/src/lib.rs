@@ -1,76 +1,92 @@
-use lazy_static::lazy_static;
-use regex::Regex;
+#![cfg_attr(not(feature = "std"), no_std)]
+use core::fmt::{Debug, Display, Formatter};
+use core::str::FromStr;
+use rand::Rng;
+#[cfg(feature = "std")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt::{Debug, Display, Formatter};
-use std::str::FromStr;
-use thiserror::Error as ThisError;
+use snafu::Snafu;
 
 #[repr(transparent)]
 #[derive(Default, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct MacAddr6(pub [u8; 6]);
+pub struct MacAddr6([u8; 6]);
 
-#[derive(Debug, ThisError)]
+#[derive(Eq, PartialEq, Debug, Snafu)]
 pub enum Error {
-    #[error("mac address is invalid")]
+    #[snafu(display("invalid MAC address"))]
     InvalidMac,
 }
 
 impl MacAddr6 {
     pub fn random() -> Self {
-        Self(rand::random())
+        let mut result = Self::default();
+        rand::rngs::OsRng.fill(result.0.as_mut_slice());
+        result
     }
 
-    pub fn set_local(&mut self, v: bool) -> MacAddr6 {
+    pub fn set_local(&mut self, v: bool) {
         if v {
             self.0[0] |= 0b0000_0010;
         } else {
             self.0[0] &= !0b0000_0010;
         }
-        *self
     }
 
     pub const fn is_local(&self) -> bool {
         (self.0[0] & 0b0000_0010) != 0
     }
 
-    pub fn set_multicast(&mut self, v: bool) -> MacAddr6 {
+    pub fn set_multicast(&mut self, v: bool) {
         if v {
             self.0[0] |= 0b0000_0001;
         } else {
             self.0[0] &= !0b0000_0001;
         }
-        *self
     }
 
     pub const fn is_multicast(&self) -> bool {
         (self.0[0] & 0b0000_0001) != 0
     }
 
-    fn write_delimited(&self, sep: &str) -> String {
-        format!(
+    fn write_delimited(&self, f: &mut Formatter<'_>, sep: &str) -> core::fmt::Result {
+        write!(
+            f,
             "{:02X}{sep}{:02X}{sep}{:02X}{sep}{:02X}{sep}{:02X}{sep}{:02X}",
             self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5]
         )
+    }
+
+    /// Returns Organizationally unique identifier
+    pub fn oui(&self) -> [u8; 3] {
+        self.0[..3].try_into().unwrap()
+    }
+
+    /// Sets Organizationally unique identifier
+    pub fn set_oui(&mut self, oui: [u8; 3]) {
+        self.0[..3].copy_from_slice(&oui);
+    }
+
+    pub fn as_array(&self) -> [u8; 6] {
+        self.0
     }
 
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
 
-    pub fn as_c_slice(&self) -> &[std::os::raw::c_char] {
-        unsafe { &*(self.as_slice() as *const _ as *const [std::os::raw::c_char]) }
+    pub fn as_c_slice(&self) -> &[core::ffi::c_char] {
+        unsafe { &*(self.as_slice() as *const _ as *const [core::ffi::c_char]) }
     }
 }
 
 impl Display for MacAddr6 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.write_delimited(":"))
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        self.write_delimited(f, ":")
     }
 }
 
 impl Debug for MacAddr6 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.write_delimited(":"))
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        self.write_delimited(f, ":")
     }
 }
 
@@ -88,11 +104,28 @@ impl TryFrom<&[u8]> for MacAddr6 {
     }
 }
 
-impl TryFrom<&[std::os::raw::c_char]> for MacAddr6 {
+impl TryFrom<&[core::ffi::c_char]> for MacAddr6 {
     type Error = Error;
 
-    fn try_from(value: &[std::os::raw::c_char]) -> Result<Self, Self::Error> {
+    fn try_from(value: &[core::ffi::c_char]) -> Result<Self, Self::Error> {
         Self::try_from(unsafe { &*(value as *const _ as *const [u8]) })
+    }
+}
+
+impl TryFrom<&str> for MacAddr6 {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::from_str(value)
+    }
+}
+
+#[cfg(feature = "std")]
+impl TryFrom<String> for MacAddr6 {
+    type Error = Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::from_str(&value)
     }
 }
 
@@ -100,28 +133,42 @@ impl FromStr for MacAddr6 {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        lazy_static! {
-            static ref MAC_SEMI_RE: Regex = Regex::new(r#"^([[:xdigit:]]{2}):([[:xdigit:]]{2}):([[:xdigit:]]{2}):([[:xdigit:]]{2}):([[:xdigit:]]{2}):([[:xdigit:]]{2})$"#).unwrap();
-            static ref MAC_DASH_RE: Regex = Regex::new(r#"^([[:xdigit:]]{2})-([[:xdigit:]]{2})-([[:xdigit:]]{2})-([[:xdigit:]]{2})-([[:xdigit:]]{2})-([[:xdigit:]]{2})$"#).unwrap();
+        let mut result = Self::default();
+        let result_buf = result.0.as_mut();
+
+        if s.len() == 12 {
+            hex::decode_to_slice(s, result_buf).map_err(|_| Error::InvalidMac)?;
+            Ok(result)
+        } else if s.len() == 17 {
+            if !s.is_ascii() {
+                return Err(Error::InvalidMac);
+            }
+
+            let sep = s.chars().nth(2).ok_or(Error::InvalidMac)?;
+            if sep != ':' && sep != '-' {
+                // Invalid separator
+                return Err(Error::InvalidMac);
+            }
+
+            if s[2..].chars().step_by(3).any(|x| x != sep) {
+                // Inconsistent separator
+                return Err(Error::InvalidMac);
+            }
+
+            for (i, s) in s.as_bytes().chunks(3).enumerate() {
+                result_buf[i] =
+                    u8::from_str_radix(unsafe { core::str::from_utf8_unchecked(&s[0..2]) }, 16)
+                        .map_err(|_| Error::InvalidMac)?;
+            }
+
+            Ok(result)
+        } else {
+            Err(Error::InvalidMac)
         }
-
-        let mut mac_hex = s.to_string();
-        mac_hex = MAC_SEMI_RE.replace(&mac_hex, "$1$2$3$4$5$6").into();
-        mac_hex = MAC_DASH_RE.replace(&mac_hex, "$1$2$3$4$5$6").into();
-
-        if mac_hex.len() != 12 {
-            return Err(Error::InvalidMac);
-        }
-
-        Ok(Self(
-            hex::decode(mac_hex)
-                .map_err(|_| Error::InvalidMac)?
-                .try_into()
-                .map_err(|_| Error::InvalidMac)?,
-        ))
     }
 }
 
+#[cfg(feature = "std")]
 impl Serialize for MacAddr6 {
     fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
     where
@@ -131,6 +178,7 @@ impl Serialize for MacAddr6 {
     }
 }
 
+#[cfg(feature = "std")]
 impl<'de> Deserialize<'de> for MacAddr6 {
     fn deserialize<D>(d: D) -> Result<Self, D::Error>
     where
@@ -142,9 +190,12 @@ impl<'de> Deserialize<'de> for MacAddr6 {
 
 #[cfg(test)]
 mod test {
-    use crate::MacAddr6;
+    use crate::{Error, MacAddr6};
+    use core::str::FromStr;
+    #[cfg(feature = "std")]
     use serde::{Deserialize, Serialize};
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_format() {
         let mac = MacAddr6::from([0x11, 0x22, 0x03, 0x00, 0x50, 0x6A]);
@@ -157,8 +208,21 @@ mod test {
         assert_eq!(mac, "11:22:03:00:50:6A".parse().unwrap());
         assert_eq!(mac, "11-22-03-00-50-6A".parse().unwrap());
         assert_eq!(mac, "11220300506A".parse().unwrap());
+
+        // Inconsistent separators
+        assert_eq!(
+            MacAddr6::from_str("11-22:03:00:50:6A"),
+            Err(Error::InvalidMac)
+        );
+
+        // Invalid length
+        assert_eq!(
+            MacAddr6::from_str("1122:03:00:50:6A"),
+            Err(Error::InvalidMac)
+        );
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_serde() {
         #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
