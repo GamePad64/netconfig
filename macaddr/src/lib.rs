@@ -13,7 +13,7 @@ use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use snafu::Snafu;
 #[cfg(feature = "std")]
-use std::net::Ipv6Addr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[derive(Eq, PartialEq, Debug, Snafu)]
 pub enum ParseError {
@@ -21,8 +21,14 @@ pub enum ParseError {
     InvalidMac,
     #[snafu(display("invalid string length"))]
     InvalidLength,
+}
+
+#[derive(Eq, PartialEq, Debug, Snafu)]
+pub enum IpError {
     #[snafu(display("invalid link-local address"))]
     InvalidLinkLocal,
+    #[snafu(display("IP is not multicast"))]
+    IpNotMulticast,
 }
 
 /// Maximum formatted size.
@@ -296,12 +302,12 @@ impl MacAddr6 {
         MacAddr8([b[0] ^ 0b00000010, b[1], b[2], 0xFF, 0xFE, b[3], b[4], b[5]])
     }
 
-    pub const fn try_from_modified_eui64(eui64: MacAddr8) -> Result<Self, ParseError> {
+    pub const fn try_from_modified_eui64(eui64: MacAddr8) -> Result<Self, IpError> {
         let b = eui64.into_array();
         if (b[3] == 0xFF) | (b[4] == 0xFE) {
             Ok(Self([b[0] ^ 0b00000010, b[1], b[2], b[5], b[6], b[7]]))
         } else {
-            Err(ParseError::InvalidLinkLocal)
+            Err(IpError::InvalidLinkLocal)
         }
     }
 
@@ -322,7 +328,7 @@ impl MacAddr6 {
     }
 
     #[cfg(feature = "std")]
-    pub const fn from_link_local_ipv6(ip: Ipv6Addr) -> Result<Self, ParseError> {
+    pub const fn try_from_link_local_ipv6(ip: Ipv6Addr) -> Result<Self, IpError> {
         let octets = ip.octets();
         if (octets[0] != 0xFE)
             | (octets[1] != 0x80)
@@ -335,7 +341,7 @@ impl MacAddr6 {
             | (octets[11] != 0xFF)
             | (octets[12] != 0xFE)
         {
-            return Err(ParseError::InvalidLinkLocal);
+            return Err(IpError::InvalidLinkLocal);
         }
 
         Ok(Self([
@@ -346,6 +352,32 @@ impl MacAddr6 {
             octets[14],
             octets[15],
         ]))
+    }
+
+    #[cfg(feature = "std")]
+    pub const fn try_from_multicast_ipv4(ip: Ipv4Addr) -> Result<Self, IpError> {
+        if !ip.is_multicast() {
+            return Err(IpError::IpNotMulticast);
+        }
+        let b = ip.octets();
+        Ok(Self::new([0x01, 0x00, 0x5E, b[1] & 0x7F, b[2], b[3]]))
+    }
+
+    #[cfg(feature = "std")]
+    pub const fn try_from_multicast_ipv6(ip: Ipv6Addr) -> Result<Self, IpError> {
+        if !ip.is_multicast() {
+            return Err(IpError::IpNotMulticast);
+        }
+        let b = ip.octets();
+        Ok(Self::new([0x33, 0x33, b[12], b[13], b[14], b[15]]))
+    }
+
+    #[cfg(feature = "std")]
+    pub const fn from_multicast_ip(ip: IpAddr) -> Result<Self, IpError> {
+        match ip {
+            IpAddr::V4(ip) => Self::try_from_multicast_ipv4(ip),
+            IpAddr::V6(ip) => Self::try_from_multicast_ipv6(ip),
+        }
     }
 }
 
@@ -465,7 +497,7 @@ mod test {
         let mac = mac6!("52:74:f2:b1:a8:7f");
         let ip = Ipv6Addr::from_str("fe80::5074:f2ff:feb1:a87f").unwrap();
         assert_eq!(mac.to_link_local_ipv6(), ip);
-        assert_eq!(MacAddr6::from_link_local_ipv6(ip).unwrap(), mac);
+        assert_eq!(MacAddr6::try_from_link_local_ipv6(ip).unwrap(), mac);
     }
 
     #[cfg(all(feature = "std", feature = "serde"))]
