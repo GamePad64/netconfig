@@ -1,205 +1,439 @@
+#![doc = include_str!("../README.md")]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![feature(doc_auto_cfg)]
 #![cfg_attr(not(feature = "std"), no_std)]
-use core::fmt::{Debug, Display, Formatter};
+mod parser;
+
+use arrayvec::ArrayString;
+use core::fmt::{self, Debug, Display, Formatter};
 use core::str::FromStr;
+#[cfg(feature = "rand")]
 use rand::Rng;
-#[cfg(feature = "std")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use snafu::Snafu;
+#[cfg(feature = "std")]
+use std::net::Ipv6Addr;
 
+#[derive(Eq, PartialEq, Debug, Snafu)]
+pub enum ParseError {
+    #[snafu(display("invalid MAC address"))]
+    InvalidMac,
+    #[snafu(display("invalid string length"))]
+    InvalidLength,
+    #[snafu(display("invalid link-local address"))]
+    InvalidLinkLocal,
+}
+
+/// Maximum formatted size.
+///
+/// It is useful for creating a stack-allocated buffer `[u8; MAC_MAX_SIZE]`
+/// and formatting address into it using [MacAddr6::format_write] or [MacAddr8::format_write].
+pub const MAC_MAX_SIZE: usize = 23;
+/// Size of formatted MAC using [MacAddr6::format_string] and [MacAddrFormat::Canonical].
+pub const MAC_CANONICAL_SIZE6: usize = 17;
+/// Size of formatted MAC using [MacAddr8::format_string] and [MacAddrFormat::Canonical].
+pub const MAC_CANONICAL_SIZE8: usize = 23;
+/// Size of formatted MAC using [MacAddr6::format_string] and [MacAddrFormat::ColonNotation].
+pub const MAC_COLON_NOTATION_SIZE6: usize = 17;
+/// Size of formatted MAC using [MacAddr8::format_string] and [MacAddrFormat::ColonNotation].
+pub const MAC_COLON_NOTATION_SIZE8: usize = 23;
+/// Size of formatted MAC using [MacAddr6::format_string] and [MacAddrFormat::DotNotation].
+pub const MAC_DOT_NOTATION_SIZE6: usize = 14;
+/// Size of formatted MAC using [MacAddr8::format_string] and [MacAddrFormat::DotNotation].
+pub const MAC_DOT_NOTATION_SIZE8: usize = 19;
+/// Size of formatted MAC using [MacAddr6::format_string] and [MacAddrFormat::Hexadecimal].
+pub const MAC_HEXADECIMAL_SIZE6: usize = 12;
+/// Size of formatted MAC using [MacAddr8::format_string] and [MacAddrFormat::Hexadecimal].
+pub const MAC_HEXADECIMAL_SIZE8: usize = 16;
+/// Size of formatted MAC using [MacAddr6::format_string] and [MacAddrFormat::Hexadecimal0x].
+pub const MAC_HEXADECIMAL0X_SIZE6: usize = 14;
+/// Size of formatted MAC using [MacAddr8::format_string] and [MacAddrFormat::Hexadecimal0x].
+pub const MAC_HEXADECIMAL0X_SIZE8: usize = 18;
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum MacAddrFormat {
+    /// `AA-BB-CC-DD-EE-FF` (17 bytes) or `AA-BB-CC-DD-EE-FF-GG-HH` (23 bytes)
+    Canonical,
+    /// `AA:BB:CC:DD:EE:FF` (17 bytes) or `AA:BB:CC:DD:EE:FF:GG:HH` (23 bytes)
+    ColonNotation,
+    /// `AABB.CCDD.EEFF` (14 bytes) or `AABB.CCDD.EEFF.GGHH` (19 bytes)
+    DotNotation,
+    /// `AABBCCDDEEFF` (12 bytes) or `AABBCCDDEEFFGGHH` (16 bytes)
+    Hexadecimal,
+    /// `0xAABBCCDDEEFF` (14 bytes) or `0xAABBCCDDEEFFGGHH` (18 bytes)
+    Hexadecimal0x,
+}
+
+macro_rules! mac_impl {
+    ($nm:ident, $sz:literal, $hex_sz:literal) => {
+        impl $nm {
+            pub const fn new(eui: [u8; $sz]) -> Self {
+                Self(eui)
+            }
+
+            #[cfg(feature = "rand")]
+            pub fn random() -> Self {
+                let mut result = Self::default();
+                rand::rngs::OsRng.fill(result.as_mut_slice());
+                result
+            }
+
+            pub const fn broadcast() -> Self {
+                Self([0xFF; $sz])
+            }
+
+            pub const fn nil() -> Self {
+                Self([0; $sz])
+            }
+
+            /// Sets *locally administered* flag
+            pub fn set_local(&mut self, v: bool) {
+                if v {
+                    self.0[0] |= 0b0000_0010;
+                } else {
+                    self.0[0] &= !0b0000_0010;
+                }
+            }
+
+            /// Returns the state of *locally administered* flag
+            pub const fn is_local(&self) -> bool {
+                (self.0[0] & 0b0000_0010) != 0
+            }
+
+            /// Sets *multicast* flag
+            pub fn set_multicast(&mut self, v: bool) {
+                if v {
+                    self.0[0] |= 0b0000_0001;
+                } else {
+                    self.0[0] &= !0b0000_0001;
+                }
+            }
+
+            /// Returns the state of *multicast* flag
+            pub const fn is_multicast(&self) -> bool {
+                (self.0[0] & 0b0000_0001) != 0
+            }
+
+            /// Returns [organizationally unique identifier (OUI)](https://en.wikipedia.org/wiki/Organizationally_unique_identifier) of this MAC address
+            pub const fn oui(&self) -> [u8; 3] {
+                [self.0[0], self.0[1], self.0[2]]
+            }
+
+            /// Sets [organizationally unique identifier (OUI)](https://en.wikipedia.org/wiki/Organizationally_unique_identifier) for this MAC address
+            pub fn set_oui(&mut self, oui: [u8; 3]) {
+                self.0[..3].copy_from_slice(&oui);
+            }
+
+            /// Returns internal array representation for this MAC address, consuming it
+            pub const fn into_array(self) -> [u8; $sz] {
+                self.0
+            }
+
+            /// Returns internal array representation for this MAC address as [u8] slice
+            pub const fn as_slice(&self) -> &[u8] {
+                &self.0
+            }
+
+            /// Returns internal array representation for this MAC address as mutable [u8] slice
+            pub fn as_mut_slice(&mut self) -> &mut [u8] {
+                &mut self.0
+            }
+
+            /// Returns internal array representation for this MAC address as [core::ffi::c_char] slice.
+            /// This can be useful in parsing `ifr_hwaddr`, for example.
+            pub const fn as_c_slice(&self) -> &[core::ffi::c_char] {
+                unsafe { &*(self.as_slice() as *const _ as *const [core::ffi::c_char]) }
+            }
+
+            /// Parse MAC address from string and return it as `MacAddr`.
+            /// This function can be used in const context, so MAC address can be parsed in compile-time.
+            pub const fn parse_str(s: &str) -> Result<Self, ParseError> {
+                match parser::MacParser::<$sz, $hex_sz>::parse(s) {
+                    Ok(v) => Ok(Self(v)),
+                    Err(e) => Err(e),
+                }
+            }
+
+            /// Write MAC address to `impl core::fmt::Write`, which can be used in `no_std` environments.
+            ///
+            /// It can be used like this with [arrayvec::ArrayString] without allocations:
+            /// ```
+            /// use arrayvec::ArrayString;
+            /// use netconfig_macaddr::{MacAddr6, MacAddrFormat, MAC_CANONICAL_SIZE6};
+            ///
+            /// let mac = MacAddr6::parse_str("AA:BB:CC:DD:EE:FF").unwrap();
+            ///
+            /// let mut buf = ArrayString::<MAC_CANONICAL_SIZE6>::new();
+            /// mac.format_write(&mut buf, MacAddrFormat::Canonical).unwrap();
+            /// assert_eq!(buf.as_str(), "AA-BB-CC-DD-EE-FF")
+            /// ```
+            pub fn format_write<T: fmt::Write>(
+                &self,
+                f: &mut T,
+                format: MacAddrFormat,
+            ) -> fmt::Result {
+                match format {
+                    MacAddrFormat::Canonical => self.write_internal(f, "", "-", "-"),
+                    MacAddrFormat::ColonNotation => self.write_internal(f, "", ":", ":"),
+                    MacAddrFormat::DotNotation => self.write_internal(f, "", "", "."),
+                    MacAddrFormat::Hexadecimal => self.write_internal(f, "", "", ""),
+                    MacAddrFormat::Hexadecimal0x => self.write_internal(f, "0x", "", ""),
+                }
+            }
+
+            /// Write MAC address to [String]. This function uses [Self::format_write] internally and
+            /// produces the same result, but in string form, which can be convenient in non-constrainted
+            /// environments.
+            #[cfg(feature = "std")]
+            pub fn format_string(&self, format: MacAddrFormat) -> String {
+                let mut buf = String::new();
+                self.format_write(&mut buf, format).unwrap();
+                buf
+            }
+        }
+
+        impl Display for $nm {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                self.format_write(f, MacAddrFormat::Canonical)
+            }
+        }
+
+        impl Debug for $nm {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                self.format_write(f, MacAddrFormat::Canonical)
+            }
+        }
+
+        impl From<[u8; $sz]> for $nm {
+            fn from(arr: [u8; $sz]) -> Self {
+                Self(arr)
+            }
+        }
+
+        impl TryFrom<&[u8]> for $nm {
+            type Error = ParseError;
+
+            fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+                Ok(Self(value.try_into().map_err(|_| ParseError::InvalidMac)?))
+            }
+        }
+
+        impl TryFrom<&[core::ffi::c_char]> for $nm {
+            type Error = ParseError;
+
+            fn try_from(value: &[core::ffi::c_char]) -> Result<Self, Self::Error> {
+                Self::try_from(unsafe { &*(value as *const _ as *const [u8]) })
+            }
+        }
+
+        impl TryFrom<&str> for $nm {
+            type Error = ParseError;
+
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                Self::parse_str(value)
+            }
+        }
+
+        #[cfg(feature = "std")]
+        impl TryFrom<String> for $nm {
+            type Error = ParseError;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                Self::parse_str(&value)
+            }
+        }
+
+        impl FromStr for $nm {
+            type Err = ParseError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Self::parse_str(s)
+            }
+        }
+
+        #[cfg(feature = "serde")]
+        impl Serialize for $nm {
+            fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let mut buf = ArrayString::<MAC_MAX_SIZE>::new();
+                self.format_write(&mut buf, MacAddrFormat::Canonical)
+                    .unwrap();
+                s.serialize_str(buf.as_ref())
+            }
+        }
+
+        #[cfg(feature = "serde")]
+        impl<'de> Deserialize<'de> for $nm {
+            fn deserialize<D>(d: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                Self::from_str(ArrayString::<MAC_MAX_SIZE>::deserialize(d)?.as_ref())
+                    .map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
+/// MAC address, represented as EUI-48
 #[repr(transparent)]
 #[derive(Default, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MacAddr6([u8; 6]);
+/// MAC address, represented as EUI-64
+#[repr(transparent)]
+#[derive(Default, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct MacAddr8([u8; 8]);
 
-#[derive(Eq, PartialEq, Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("invalid MAC address"))]
-    InvalidMac,
-}
+mac_impl!(MacAddr6, 6, 12);
+mac_impl!(MacAddr8, 8, 16);
 
 impl MacAddr6 {
-    pub fn random() -> Self {
-        let mut result = Self::default();
-        rand::rngs::OsRng.fill(result.0.as_mut_slice());
-        result
+    pub const fn into_modified_eui64(self) -> MacAddr8 {
+        let b = self.into_array();
+        MacAddr8([b[0] ^ 0b00000010, b[1], b[2], 0xFF, 0xFE, b[3], b[4], b[5]])
     }
 
-    pub fn set_local(&mut self, v: bool) {
-        if v {
-            self.0[0] |= 0b0000_0010;
+    pub const fn try_from_modified_eui64(eui64: MacAddr8) -> Result<Self, ParseError> {
+        let b = eui64.into_array();
+        if (b[3] == 0xFF) | (b[4] == 0xFE) {
+            Ok(Self([b[0] ^ 0b00000010, b[1], b[2], b[5], b[6], b[7]]))
         } else {
-            self.0[0] &= !0b0000_0010;
+            Err(ParseError::InvalidLinkLocal)
         }
     }
 
-    pub const fn is_local(&self) -> bool {
-        (self.0[0] & 0b0000_0010) != 0
-    }
+    #[cfg(feature = "std")]
+    pub const fn to_link_local_ipv6(&self) -> Ipv6Addr {
+        let mac64 = self.into_modified_eui64().into_array();
 
-    pub fn set_multicast(&mut self, v: bool) {
-        if v {
-            self.0[0] |= 0b0000_0001;
-        } else {
-            self.0[0] &= !0b0000_0001;
-        }
-    }
-
-    pub const fn is_multicast(&self) -> bool {
-        (self.0[0] & 0b0000_0001) != 0
-    }
-
-    fn write_delimited(&self, f: &mut Formatter<'_>, sep: &str) -> core::fmt::Result {
-        write!(
-            f,
-            "{:02X}{sep}{:02X}{sep}{:02X}{sep}{:02X}{sep}{:02X}{sep}{:02X}",
-            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5]
+        Ipv6Addr::new(
+            0xFE80,
+            0x0000,
+            0x0000,
+            0x0000,
+            ((mac64[0] as u16) << 8) + mac64[1] as u16,
+            ((mac64[2] as u16) << 8) + mac64[3] as u16,
+            ((mac64[4] as u16) << 8) + mac64[5] as u16,
+            ((mac64[6] as u16) << 8) + mac64[7] as u16,
         )
     }
 
-    /// Returns Organizationally unique identifier
-    pub fn oui(&self) -> [u8; 3] {
-        self.0[..3].try_into().unwrap()
-    }
-
-    /// Sets Organizationally unique identifier
-    pub fn set_oui(&mut self, oui: [u8; 3]) {
-        self.0[..3].copy_from_slice(&oui);
-    }
-
-    pub fn as_array(&self) -> [u8; 6] {
-        self.0
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        &self.0
-    }
-
-    pub fn as_c_slice(&self) -> &[core::ffi::c_char] {
-        unsafe { &*(self.as_slice() as *const _ as *const [core::ffi::c_char]) }
-    }
-}
-
-impl Display for MacAddr6 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        self.write_delimited(f, ":")
-    }
-}
-
-impl Debug for MacAddr6 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        self.write_delimited(f, ":")
-    }
-}
-
-impl From<[u8; 6]> for MacAddr6 {
-    fn from(arr: [u8; 6]) -> Self {
-        Self(arr)
-    }
-}
-
-impl TryFrom<&[u8]> for MacAddr6 {
-    type Error = Error;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        Ok(Self(value.try_into().map_err(|_| Error::InvalidMac)?))
-    }
-}
-
-impl TryFrom<&[core::ffi::c_char]> for MacAddr6 {
-    type Error = Error;
-
-    fn try_from(value: &[core::ffi::c_char]) -> Result<Self, Self::Error> {
-        Self::try_from(unsafe { &*(value as *const _ as *const [u8]) })
-    }
-}
-
-impl TryFrom<&str> for MacAddr6 {
-    type Error = Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::from_str(value)
-    }
-}
-
-#[cfg(feature = "std")]
-impl TryFrom<String> for MacAddr6 {
-    type Error = Error;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::from_str(&value)
-    }
-}
-
-impl FromStr for MacAddr6 {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut result = Self::default();
-        let result_buf = result.0.as_mut();
-
-        if s.len() == 12 {
-            hex::decode_to_slice(s, result_buf).map_err(|_| Error::InvalidMac)?;
-            Ok(result)
-        } else if s.len() == 17 {
-            if !s.is_ascii() {
-                return Err(Error::InvalidMac);
-            }
-
-            let sep = s.chars().nth(2).ok_or(Error::InvalidMac)?;
-            if sep != ':' && sep != '-' {
-                // Invalid separator
-                return Err(Error::InvalidMac);
-            }
-
-            if s[2..].chars().step_by(3).any(|x| x != sep) {
-                // Inconsistent separator
-                return Err(Error::InvalidMac);
-            }
-
-            for (i, s) in s.as_bytes().chunks(3).enumerate() {
-                result_buf[i] =
-                    u8::from_str_radix(unsafe { core::str::from_utf8_unchecked(&s[0..2]) }, 16)
-                        .map_err(|_| Error::InvalidMac)?;
-            }
-
-            Ok(result)
-        } else {
-            Err(Error::InvalidMac)
+    #[cfg(feature = "std")]
+    pub const fn from_link_local_ipv6(ip: Ipv6Addr) -> Result<Self, ParseError> {
+        let octets = ip.octets();
+        if (octets[0] != 0xFE)
+            | (octets[1] != 0x80)
+            | (octets[2] != 0x00)
+            | (octets[3] != 0x00)
+            | (octets[4] != 0x00)
+            | (octets[5] != 0x00)
+            | (octets[6] != 0x00)
+            | (octets[7] != 0x00)
+            | (octets[11] != 0xFF)
+            | (octets[12] != 0xFE)
+        {
+            return Err(ParseError::InvalidLinkLocal);
         }
+
+        Ok(Self([
+            octets[8] ^ 0b00000010,
+            octets[9],
+            octets[10],
+            octets[13],
+            octets[14],
+            octets[15],
+        ]))
     }
 }
 
-#[cfg(feature = "std")]
-impl Serialize for MacAddr6 {
-    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.to_string().serialize(s)
+impl MacAddr6 {
+    // String representations
+    fn write_internal<T: fmt::Write>(
+        &self,
+        f: &mut T,
+        pre: &str,
+        sep: &str,
+        sep2: &str,
+    ) -> fmt::Result {
+        write!(
+            f,
+            "{pre}{:02X}{sep}{:02X}{sep2}{:02X}{sep}{:02X}{sep2}{:02X}{sep}{:02X}",
+            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5]
+        )
     }
 }
 
-#[cfg(feature = "std")]
-impl<'de> Deserialize<'de> for MacAddr6 {
-    fn deserialize<D>(d: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        MacAddr6::from_str(&String::deserialize(d)?).map_err(serde::de::Error::custom)
+impl MacAddr8 {
+    // String representations
+    fn write_internal<T: fmt::Write>(
+        &self,
+        f: &mut T,
+        pre: &str,
+        sep: &str,
+        sep2: &str,
+    ) -> fmt::Result {
+        write!(
+            f,
+            "{pre}{:02X}{sep}{:02X}{sep2}{:02X}{sep}{:02X}{sep2}{:02X}{sep}{:02X}{sep2}{:02X}{sep}{:02X}",
+            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5], self.0[6], self.0[7]
+        )
     }
+}
+
+/// Convenience macro for creating [MacAddr6] in compile-time.
+///
+/// Example:
+/// ```
+/// use netconfig_macaddr::{mac6, MacAddr6};
+/// const MAC6: MacAddr6 = mac6!("11:22:33:44:55:66");
+/// ```
+#[macro_export]
+macro_rules! mac6 {
+    ($s:expr) => {
+        match $crate::MacAddr6::parse_str($s) {
+            Ok(mac) => mac,
+            Err(_) => panic!("Invalid MAC address"),
+        }
+    };
+}
+
+/// Convenience macro for creating [MacAddr8] in compile-time.
+///
+/// Example:
+/// ```
+/// use netconfig_macaddr::{mac8, MacAddr8};
+/// const MAC8: MacAddr8 = mac8!("11:22:33:44:55:66:77:88");
+/// ```
+#[macro_export]
+macro_rules! mac8 {
+    ($s:expr) => {
+        match $crate::MacAddr8::parse_str($s) {
+            Ok(mac) => mac,
+            Err(_) => panic!("Invalid MAC address"),
+        }
+    };
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{Error, MacAddr6};
+    use crate::{MacAddr6, MacAddr8, ParseError};
     use core::str::FromStr;
     #[cfg(feature = "std")]
     use serde::{Deserialize, Serialize};
+
+    #[allow(unused)]
+    const TEST_MAC_CONST6: MacAddr6 = mac6!("11-22-03-00-50-6A");
+    #[allow(unused)]
+    const TEST_MAC_CONST8: MacAddr8 = mac8!("11-22-03-00-50-6A-BB-DA");
 
     #[cfg(feature = "std")]
     #[test]
     fn test_format() {
         let mac = MacAddr6::from([0x11, 0x22, 0x03, 0x00, 0x50, 0x6A]);
-        assert_eq!(mac.to_string(), "11:22:03:00:50:6A")
+        assert_eq!(mac.to_string(), "11-22-03-00-50-6A")
     }
 
     #[test]
@@ -208,21 +442,33 @@ mod test {
         assert_eq!(mac, "11:22:03:00:50:6A".parse().unwrap());
         assert_eq!(mac, "11-22-03-00-50-6A".parse().unwrap());
         assert_eq!(mac, "11220300506A".parse().unwrap());
+        assert_eq!(mac, "1122.0300.506A".parse().unwrap());
 
         // Inconsistent separators
         assert_eq!(
             MacAddr6::from_str("11-22:03:00:50:6A"),
-            Err(Error::InvalidMac)
+            Err(ParseError::InvalidMac)
         );
 
         // Invalid length
         assert_eq!(
             MacAddr6::from_str("1122:03:00:50:6A"),
-            Err(Error::InvalidMac)
+            Err(ParseError::InvalidLength)
         );
     }
 
     #[cfg(feature = "std")]
+    #[test]
+    fn test_ipv6() {
+        use std::net::Ipv6Addr;
+
+        let mac = mac6!("52:74:f2:b1:a8:7f");
+        let ip = Ipv6Addr::from_str("fe80::5074:f2ff:feb1:a87f").unwrap();
+        assert_eq!(mac.to_link_local_ipv6(), ip);
+        assert_eq!(MacAddr6::from_link_local_ipv6(ip).unwrap(), mac);
+    }
+
+    #[cfg(all(feature = "std", feature = "serde"))]
     #[test]
     fn test_serde() {
         #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
@@ -230,17 +476,17 @@ mod test {
             pub mac: MacAddr6,
         }
         let s = S {
-            mac: MacAddr6::from([0x11, 0x22, 0x03, 0x00, 0x50, 0x6A]),
+            mac: mac6!("11-22-03-00-50-6A"),
         };
         let serialized = serde_json::to_string(&s).unwrap();
-        assert_eq!(serialized, r#"{"mac":"11:22:03:00:50:6A"}"#);
+        assert_eq!(serialized, r#"{"mac":"11-22-03-00-50-6A"}"#);
         let parsed: S = serde_json::from_str(&serialized).unwrap();
         assert_eq!(parsed, s);
     }
 
     #[test]
     fn test_flags_roundtrip() {
-        let mut addr = MacAddr6::default();
+        let mut addr = mac6!("50:74:f2:b1:a8:7f");
         assert!(!addr.is_local());
         assert!(!addr.is_multicast());
 

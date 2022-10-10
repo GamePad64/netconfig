@@ -6,15 +6,17 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1.0.145", default-features = false, features = ["derive"] }
-rand = { version = "0.8.5", default-features = false, features = ["getrandom"] }
-hex = { version = "0.4.3", default-features = false }
+serde = { version = "1.0.145", default-features = false, features = ["derive"], optional = true }
+rand = { version = "0.8.5", default-features = false, features = ["getrandom"], optional = true }
 cfg-if = "1.0.0"
 snafu = { version = "0.7.1", default-features = false }
+arrayvec = { version = "0.7.2", default-features = false, features = ["serde"] }
 
 [dev-dependencies]
 serde_json = "1.0.85"
 
 [features]
-default = ["std"]
-std = ["hex/std", "rand/std", "snafu/std", "serde/std"]
+default = ["std", "rand", "serde"]
+std = ["snafu/std", "serde?/std"]
+rand = ["dep:rand"]
+serde = ["dep:serde"]
