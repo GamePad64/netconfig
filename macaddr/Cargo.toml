@@ -9,7 +9,7 @@ edition = "2021"
 serde = { version = "1.0.145", default-features = false, features = ["derive"], optional = true }
 rand = { version = "0.8.5", default-features = false, features = ["getrandom"], optional = true }
 cfg-if = "1.0.0"
-snafu = { version = "0.7.1", default-features = false }
+snafu = { version = "0.7.2", default-features = false }
 arrayvec = { version = "0.7.2", default-features = false, features = ["serde"] }
 
 [dev-dependencies]
