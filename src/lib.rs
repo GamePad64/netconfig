@@ -1,11 +1,9 @@
-extern crate core;
-
 mod error;
+use advmac::MacAddr6;
 use delegate::delegate;
 pub use error::Error;
 pub use ipnet;
 use ipnet::IpNet;
-use netconfig_macaddr::MacAddr6;
 use std::collections::HashSet;
 
 pub mod sys;

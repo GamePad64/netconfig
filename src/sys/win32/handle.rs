@@ -1,9 +1,9 @@
 use crate::sys::mib_table::MibTable;
 use crate::sys::InterfaceHandle;
 use crate::{Error, Interface};
+use advmac::MacAddr6;
 use ipnet::IpNet;
 use log::warn;
-use netconfig_macaddr::MacAddr6;
 use std::collections::HashSet;
 use std::io::{self, ErrorKind};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
