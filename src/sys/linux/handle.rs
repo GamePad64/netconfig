@@ -1,15 +1,14 @@
 use crate::sys::ifreq::ifreq;
 use crate::sys::{dummy_socket, ioctls, InterfaceHandle};
 use crate::{Error, Interface};
+use advmac::MacAddr6;
 use delegate::delegate;
 use ipnet::IpNet;
 use libc::{AF_INET, AF_INET6, ARPHRD_ETHER};
 use log::debug;
-use netconfig_macaddr::MacAddr6;
-use netlink_packet_route::address::Nla as AddressNla;
 use netlink_packet_route::{
-    AddressMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload, RtnlMessage, NLM_F_DUMP,
-    NLM_F_REQUEST,
+    address::Nla as AddressNla, AddressMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload,
+    RtnlMessage, NLM_F_DUMP, NLM_F_REQUEST,
 };
 use netlink_sys::constants::NETLINK_ROUTE;
 use netlink_sys::{Socket, SocketAddr};

@@ -2,6 +2,7 @@ use super::scinterface::SCNetworkInterface;
 use crate::sys::ifreq;
 use crate::sys::{dummy_socket, ioctls, InterfaceHandle};
 use crate::{Error, Interface};
+use advmac::MacAddr6;
 use delegate::delegate;
 use ipnet::IpNet;
 use nix::sys::socket::{SockaddrIn, SockaddrIn6};
