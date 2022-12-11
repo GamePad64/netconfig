@@ -16,23 +16,23 @@ impl InterfaceHandle {
         let name = self.name()?;
 
         for interface in getifaddrs()?.filter(|x| x.interface_name == name) {
-            if let (Some(address), Some(netmask)) = (interface.address, interface.netmask) {
-                let (address, netmask) = match (address.family(), netmask.family()) {
-                    (Some(Inet), Some(Inet)) => (
-                        IpAddr::V4(address.as_sockaddr_in().unwrap().ip().into()),
-                        IpAddr::V4(netmask.as_sockaddr_in().unwrap().ip().into()),
-                    ),
-                    (Some(Inet6), Some(Inet6)) => (
-                        IpAddr::V6(address.as_sockaddr_in6().unwrap().ip()),
-                        IpAddr::V6(netmask.as_sockaddr_in6().unwrap().ip()),
-                    ),
-                    (_, _) => continue,
-                };
+            let (Some(address), Some(netmask)) = (interface.address, interface.netmask) else { continue; };
 
-                let prefix = ipnetwork::ip_mask_to_prefix(netmask).unwrap();
+            let (address, netmask) = match (address.family(), netmask.family()) {
+                (Some(Inet), Some(Inet)) => (
+                    IpAddr::V4(address.as_sockaddr_in().unwrap().ip().into()),
+                    IpAddr::V4(netmask.as_sockaddr_in().unwrap().ip().into()),
+                ),
+                (Some(Inet6), Some(Inet6)) => (
+                    IpAddr::V6(address.as_sockaddr_in6().unwrap().ip()),
+                    IpAddr::V6(netmask.as_sockaddr_in6().unwrap().ip()),
+                ),
+                (_, _) => continue,
+            };
 
-                result.push(IpNet::new(address, prefix).unwrap());
-            }
+            let prefix = ipnet::ip_mask_to_prefix(netmask).unwrap();
+
+            result.push(IpNet::new(address, prefix).unwrap());
         }
         Ok(result)
     }
