@@ -5,6 +5,7 @@ pub use error::Error;
 pub use ipnet;
 use ipnet::IpNet;
 use std::collections::HashSet;
+use std::net::IpAddr;
 
 pub mod sys;
 
@@ -18,7 +19,10 @@ pub struct Interface(sys::InterfaceHandle);
 impl Interface {
     delegate! {
         to self.0 {
+            #[cfg(not(target_os = "macos"))]
             pub fn add_address(&self, network: IpNet) -> Result<(), Error>;
+            #[cfg(target_os = "macos")]
+            pub fn add_address(&self, address: IpAddr, dest_network: IpNet) -> Result<(), Error>;
             pub fn remove_address(&self, network: IpNet) -> Result<(), Error>;
             /// Returns array of IP addresses, assigned to this Interface
             pub fn addresses(&self) -> Result<Vec<IpNet>, Error>;
