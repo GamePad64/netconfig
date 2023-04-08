@@ -16,13 +16,13 @@ pub trait InterfaceExt {
 }
 
 impl InterfaceHandle {
-    pub fn add_address(&self, address: net::IpAddr, dest_network: IpNet) -> Result<(), Error> {
+    pub fn add_address(&self, network: IpNet) -> Result<(), Error> {
         let socket = dummy_socket()?;
         let name = self.name()?;
-        match (address, dest_network) {
-            (net::IpAddr::V4(address), IpNet::V4(network)) => {
-                let ifra_addr = SockaddrIn::from(net::SocketAddrV4::new(address, 0));
-                let ifra_dest_addr = SockaddrIn::from(net::SocketAddrV4::new(network.addr(), 0));
+        match network {
+            IpNet::V4(network) => {
+                let ifra_addr = SockaddrIn::from(net::SocketAddrV4::new(network.addr(), 0));
+                let ifra_dest_addr = SockaddrIn::from(net::SocketAddrV4::new(network.network(), 0));
                 let ifra_dest_mask = SockaddrIn::from(net::SocketAddrV4::new(network.netmask(), 0));
 
                 let req = ifreq::ifaliasreq4 {
@@ -37,10 +37,10 @@ impl InterfaceHandle {
                 }
                 Ok(())
             }
-            (net::IpAddr::V6(address), IpNet::V6(network)) => {
-                let ifra_addr = SockaddrIn6::from(net::SocketAddrV6::new(address, 0, 0, 0));
+            IpNet::V6(network) => {
+                let ifra_addr = SockaddrIn6::from(net::SocketAddrV6::new(network.addr(), 0, 0, 0));
                 let ifra_dest_addr =
-                    SockaddrIn6::from(net::SocketAddrV6::new(network.addr(), 0, 0, 0));
+                    SockaddrIn6::from(net::SocketAddrV6::new(network.network(), 0, 0, 0));
                 let ifra_dest_mask =
                     SockaddrIn6::from(net::SocketAddrV6::new(network.netmask(), 0, 0, 0));
 
@@ -56,7 +56,6 @@ impl InterfaceHandle {
                 }
                 Ok(())
             }
-            _ => Err(Error::InvalidParameter),
         }
     }
 
