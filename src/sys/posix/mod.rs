@@ -10,7 +10,7 @@ use std::net;
 pub(crate) mod ioctls;
 
 pub(crate) fn dummy_socket() -> Result<net::UdpSocket, Error> {
-    Ok(net::UdpSocket::bind("[::1]:0")?)
+    Ok(net::UdpSocket::bind("0:0")?)
 }
 
 pub(crate) fn list_interfaces() -> Result<Vec<crate::Interface>, Error> {

@@ -20,16 +20,16 @@ impl InterfaceHandle {
         let socket = dummy_socket()?;
         let name = self.name()?;
         match network {
-            IpNet::V4(addr4) => {
-                let ifra_addr = SockaddrIn::from(net::SocketAddrV4::new(addr4.addr(), 0));
-                let ifra_broadaddr = SockaddrIn::from(net::SocketAddrV4::new(addr4.broadcast(), 0));
-                let ifra_mask = SockaddrIn::from(net::SocketAddrV4::new(addr4.netmask(), 0));
+            IpNet::V4(network) => {
+                let ifra_addr = SockaddrIn::from(net::SocketAddrV4::new(network.addr(), 0));
+                let ifra_dest_addr = SockaddrIn::from(net::SocketAddrV4::new(network.network(), 0));
+                let ifra_dest_mask = SockaddrIn::from(net::SocketAddrV4::new(network.netmask(), 0));
 
                 let req = ifreq::ifaliasreq4 {
                     ifra_name: name.parse().unwrap(),
                     ifra_addr: *ifra_addr.as_ref(),
-                    ifra_broadaddr: *ifra_broadaddr.as_ref(),
-                    ifra_mask: *ifra_mask.as_ref(),
+                    ifra_broadaddr: *ifra_dest_addr.as_ref(),
+                    ifra_mask: *ifra_dest_mask.as_ref(),
                 };
 
                 unsafe {
@@ -37,17 +37,18 @@ impl InterfaceHandle {
                 }
                 Ok(())
             }
-            IpNet::V6(addr6) => {
-                let ifra_addr = SockaddrIn6::from(net::SocketAddrV6::new(addr6.addr(), 0, 0, 0));
-                let ifra_broadaddr =
-                    SockaddrIn6::from(net::SocketAddrV6::new(addr6.broadcast(), 0, 0, 0));
-                let ifra_mask = SockaddrIn6::from(net::SocketAddrV6::new(addr6.netmask(), 0, 0, 0));
+            IpNet::V6(network) => {
+                let ifra_addr = SockaddrIn6::from(net::SocketAddrV6::new(network.addr(), 0, 0, 0));
+                let ifra_dest_addr =
+                    SockaddrIn6::from(net::SocketAddrV6::new(network.network(), 0, 0, 0));
+                let ifra_dest_mask =
+                    SockaddrIn6::from(net::SocketAddrV6::new(network.netmask(), 0, 0, 0));
 
                 let req = ifreq::ifaliasreq6 {
                     ifra_name: name.parse().unwrap(),
                     ifra_addr: *ifra_addr.as_ref(),
-                    ifra_broadaddr: *ifra_broadaddr.as_ref(),
-                    ifra_mask: *ifra_mask.as_ref(),
+                    ifra_broadaddr: *ifra_dest_addr.as_ref(),
+                    ifra_mask: *ifra_dest_mask.as_ref(),
                 };
 
                 unsafe {
