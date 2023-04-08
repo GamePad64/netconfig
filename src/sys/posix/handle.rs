@@ -38,7 +38,7 @@ impl InterfaceHandle {
     }
 
     pub fn mtu(&self) -> Result<u32, Error> {
-        let mut req = ifreq::new(&self.name()?);
+        let mut req = ifreq::new(self.name()?);
         let socket = dummy_socket()?;
 
         unsafe {
